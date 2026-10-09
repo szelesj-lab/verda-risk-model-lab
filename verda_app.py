@@ -23,7 +23,6 @@ import generate_data
 from verda_diagrams import FaultTreeDiagram, BayesDiagram, FTA_SHORT, BN_SHORT
 
 APP_TITLE = "VERDA Risk Model Lab"
-APP_VERSION = "1.0"
 DEVELOPER = "József Szeles"
 AFFILIATION = "Department of System Engineering, University of Pannonia"
 MONO = ("Consolas", 10)
@@ -125,23 +124,34 @@ class FaultTreeTab(ttk.Frame):
 
 
 class SensitivityTab(ttk.Frame):
+    DEFAULT_LOW, DEFAULT_HIGH = "0.5", "2"
+
     def __init__(self, master, app):
         super().__init__(master, padding=10)
         self.app = app
         top = ttk.Frame(self)
         top.pack(fill="x")
         ttk.Label(top, text="Each event is scaled by").pack(side="left")
-        self.low = tk.StringVar(value="0.5")
-        self.high = tk.StringVar(value="2")
-        ttk.Entry(top, textvariable=self.low, width=5).pack(side="left", padx=4)
-        ttk.Label(top, text="and").pack(side="left")
-        ttk.Entry(top, textvariable=self.high, width=5).pack(side="left", padx=4)
-        ttk.Button(top, text="Update", command=self.refresh).pack(side="left", padx=8)
+        self.low = tk.StringVar(value=self.DEFAULT_LOW)
+        self.high = tk.StringVar(value=self.DEFAULT_HIGH)
+        for var, label in ((self.low, "and"), (self.high, None)):
+            e = ttk.Entry(top, textvariable=var, width=5)
+            e.pack(side="left", padx=4)
+            e.bind("<Return>", lambda _e: self.refresh())
+            if label:
+                ttk.Label(top, text=label).pack(side="left")
+        ttk.Button(top, text="Update", command=self.refresh).pack(side="left", padx=(8, 0))
+        ttk.Button(top, text="Reset defaults", command=self.reset).pack(side="left", padx=6)
         ttk.Label(top, text="Uses the probabilities currently set on tab 1 (Fault tree).",
                   foreground="#666").pack(side="left", padx=10)
         self.canvas = tk.Canvas(self, background="white", highlightthickness=0)
         self.canvas.pack(fill="both", expand=True, pady=(10, 0))
         self.canvas.bind("<Configure>", lambda e: self.refresh())
+
+    def reset(self):
+        self.low.set(self.DEFAULT_LOW)
+        self.high.set(self.DEFAULT_HIGH)
+        self.refresh()
 
     def refresh(self):
         if not hasattr(self.app, "fta"):
@@ -390,7 +400,7 @@ class App(tk.Tk):
     def __init__(self):
         super().__init__()
         self.title(APP_TITLE)
-        self.geometry("1500x920")
+        self.geometry("1500x920")   # size when not maximised
         self.minsize(1280, 820)
         try:
             ttk.Style().theme_use("vista")
@@ -417,22 +427,17 @@ class App(tk.Tk):
                   foreground="#666").pack(side="left")
         ttk.Label(foot, text=f"Developer: {DEVELOPER}, {AFFILIATION}",
                   foreground="#666").pack(side="right")
+        self.maximize()
 
-        menubar = tk.Menu(self)
-        helpmenu = tk.Menu(menubar, tearoff=0)
-        helpmenu.add_command(label="About", command=self.about)
-        menubar.add_cascade(label="Help", menu=helpmenu)
-        self.config(menu=menubar)
-
-    def about(self):
-        messagebox.showinfo(
-            f"About {APP_TITLE}",
-            f"{APP_TITLE}  v{APP_VERSION}\n\n"
-            "Teaching software for the course\n"
-            "Risk and Resilience Modelling of Socio-Technical Manufacturing Systems\n\n"
-            f"Developer: {DEVELOPER}\n{AFFILIATION}\n\n"
-            "Fault tree and Bayesian network model of the fictional VERDA production cell.\n"
-            "All probabilities are illustrative teaching values.")
+    def maximize(self):
+        """Open maximised (Windows: 'zoomed'; Linux: -zoomed; macOS keeps the default size)."""
+        try:
+            self.state("zoomed")
+        except tk.TclError:
+            try:
+                self.attributes("-zoomed", True)
+            except tk.TclError:
+                pass
 
 
 if __name__ == "__main__":
