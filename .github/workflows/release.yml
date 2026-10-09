@@ -1,0 +1,69 @@
+# Builds VERDA_Risk_Lab.exe and publishes it as a GitHub Release.
+#
+# Trigger: push a version tag, e.g.
+#   git tag v1.0.0
+#   git push origin v1.0.0
+# or start it by hand under Actions -> Release -> Run workflow (enter a tag).
+
+name: Release
+
+on:
+  push:
+    tags: ["v*"]
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: "Release tag to create (e.g. v1.0.1)"
+        required: true
+
+permissions:
+  contents: write   # needed to create the release and upload files
+
+jobs:
+  build:
+    runs-on: windows-latest
+    env:
+      TAG: ${{ github.event.inputs.tag || github.ref_name }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Run unit tests
+        run: python -m unittest discover -s tests -v
+
+      - name: Build the .exe
+        run: |
+          python -m pip install --upgrade pip pyinstaller
+          python -m PyInstaller --onefile --windowed --name VERDA_Risk_Lab verda_app.py
+
+      - name: Package release files
+        shell: pwsh
+        run: |
+          New-Item -ItemType Directory -Force release | Out-Null
+          Copy-Item dist\VERDA_Risk_Lab.exe release\
+          Copy-Item verda_batch_records.csv release\
+          Copy-Item README.md release\
+          Compress-Archive -Path release\* -DestinationPath "VERDA_Risk_Lab_$env:TAG.zip"
+
+      - name: Publish GitHub Release
+        shell: pwsh
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          $notes = @"
+          VERDA Risk Model Lab $env:TAG
+
+          Download **VERDA_Risk_Lab.exe** and double-click it (Windows, no installation needed).
+          The zip also contains the sample batch records for the validation exercise.
+
+          If Windows SmartScreen warns, choose *More info -> Run anyway*.
+          "@
+          gh release create "$env:TAG" `
+            "dist\VERDA_Risk_Lab.exe" `
+            "VERDA_Risk_Lab_$env:TAG.zip" `
+            --title "VERDA Risk Model Lab $env:TAG" `
+            --notes "$notes" `
+            --target "${{ github.sha }}"
