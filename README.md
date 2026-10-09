@@ -1,4 +1,4 @@
-# VERDA Risk Model Lab
+# VERDA Risk Model Teaching Lab
 
 **Developer:** József Szeles, Department of System Engineering, University of Pannonia
 
