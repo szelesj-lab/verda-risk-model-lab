@@ -14,6 +14,7 @@ All probabilities are illustrative values per batch.
 | `verda_model.py` | The model: fault tree, cut sets, importance, sensitivity, Bayesian network (exact inference), validation. Standard library only. |
 | `verda_app.py` | Desktop interface (tkinter) with four tabs. |
 | `verda_diagrams.py` | Graphical fault tree and Bayesian network views. |
+| `verda_theme.py` | Visual theme: colours, fonts, cards (standard library only). |
 | `generate_data.py` | Creates fictional batch records for the validation exercise. |
 | `verda_batch_records.csv` | 200 sample batch records (seed 2026). |
 | `build_exe.bat` | Builds `VERDA_Risk_Lab.exe` on Windows with PyInstaller. |
