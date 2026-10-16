@@ -26,7 +26,7 @@ from verda_diagrams import FaultTreeDiagram, BayesDiagram, FTA_SHORT, BN_SHORT
 APP_TITLE = "VERDA Risk Model Lab"
 DEVELOPER = "József Szeles"
 AFFILIATION = "Department of System Engineering, University of Pannonia"
-PAD = 16
+PAD = 12
 
 
 class FaultTreeTab(ttk.Frame):
@@ -38,10 +38,11 @@ class FaultTreeTab(ttk.Frame):
         self.vars = {}
         self.entries = {}
 
-        left = ttk.Frame(self, style="Page.TFrame")
-        left.pack(side="left", fill="y")
+        panel = th.ScrollPanel(self)
+        panel.pack(side="left", fill="y")
+        left = panel.body
 
-        res = th.Card(left, text="RESULT", padding=14)
+        res = th.Card(left, text="RESULT", padding=(12, 10))
         res.pack(fill="x")
         ttk.Label(res, text="P(UNSAFE BATCH RELEASED)", style="KpiCaption.TLabel").pack(anchor="w")
         self.kpi = ttk.Label(res, text="", style="Kpi.TLabel")
@@ -50,13 +51,13 @@ class FaultTreeTab(ttk.Frame):
         row.pack(anchor="w", fill="x")
         self.kpi_one_in = ttk.Label(row, text="", style="Muted.TLabel")
         self.kpi_one_in.pack(side="left")
-        self.kpi_delta = tk.Label(row, text="", font=th.F_SMALL_BOLD, padx=8, pady=1,
+        self.kpi_delta = tk.Label(row, text="", font=th.F_SMALL_BOLD, padx=th.px(8), pady=1,
                                   bg=th.SUBTLE, fg=th.MUTED)
         self.kpi_delta.pack(side="left", padx=(10, 0))
         ttk.Button(res, text="Full report (gates, cut sets, importance)…",
-                   command=self.show_report).pack(anchor="w", pady=(12, 0))
+                   command=self.show_report).pack(anchor="w", pady=(8, 0))
 
-        box = th.Card(left, text="BASIC EVENTS  ·  PROBABILITY PER BATCH", padding=12)
+        box = th.Card(left, text="BASIC EVENTS  ·  PROBABILITY PER BATCH", padding=(12, 8))
         box.pack(fill="x", pady=(PAD, 0))
         for r, (eid, (desc, layer, p)) in enumerate(vm.BASIC_EVENTS.items()):
             ttk.Label(box, text=eid, font=th.F_SMALL_BOLD, foreground=th.MUTED,
@@ -65,16 +66,16 @@ class FaultTreeTab(ttk.Frame):
             ttk.Label(box, text=layer, style="Muted.TLabel", width=12).grid(row=r, column=2, sticky="w")
             v = tk.StringVar(value=str(p))
             e = ttk.Entry(box, textvariable=v, width=8, justify="right")
-            e.grid(row=r, column=3, pady=2)
+            e.grid(row=r, column=3, pady=1)
             e.bind("<Return>", lambda _e: self.calculate())
             self.vars[eid] = v
             self.entries[eid] = e
         bar = ttk.Frame(box)
-        bar.grid(row=len(vm.BASIC_EVENTS), column=0, columnspan=4, pady=(12, 0), sticky="w")
+        bar.grid(row=len(vm.BASIC_EVENTS), column=0, columnspan=4, pady=(10, 0), sticky="w")
         ttk.Button(bar, text="Calculate", style="Accent.TButton", command=self.calculate).pack(side="left")
         ttk.Button(bar, text="Reset defaults", command=self.reset).pack(side="left", padx=8)
         ttk.Label(box, text="Type a value and press Enter or Calculate.", style="Muted.TLabel").grid(
-            row=len(vm.BASIC_EVENTS) + 1, column=0, columnspan=4, sticky="w", pady=(8, 0))
+            row=len(vm.BASIC_EVENTS) + 1, column=0, columnspan=4, sticky="w", pady=(4, 0))
 
         self.diagram = FaultTreeDiagram(self, app)
         self.diagram.pack(side="left", fill="both", expand=True, padx=(PAD, 0))
@@ -167,7 +168,17 @@ class SensitivityTab(ttk.Frame):
         self.canvas = tk.Canvas(self)
         th.style_canvas(self.canvas)
         self.canvas.pack(fill="both", expand=True, pady=(PAD, 0))
-        self.canvas.bind("<Configure>", lambda e: self.refresh())
+        self._pending = None
+        self.canvas.bind("<Configure>", lambda e: self._schedule())
+
+    def _schedule(self):
+        if self._pending:
+            self.after_cancel(self._pending)
+        self._pending = self.after(40, self._redraw)
+
+    def _redraw(self):
+        self._pending = None
+        self.refresh()
 
     def reset(self):
         self.low.set(self.DEFAULT_LOW)
@@ -185,34 +196,35 @@ class SensitivityTab(ttk.Frame):
         base, rows = vm.sensitivity(p, lo, hi)
         c = self.canvas
         c.delete("all")
-        w, h = max(c.winfo_width(), 600), max(c.winfo_height(), 300)
-        left, right, y0 = 360, w - 170, 92
-        row_h = min(40, (h - y0 - 60) / max(len(rows), 1))
+        k = th.S
+        w, h = max(c.winfo_width(), 600 * k), max(c.winfo_height(), 300 * k)
+        left, right, y0 = th.clamp(w * 0.3, 330 * k, 380 * k), w - 160 * k, 80 * k
+        row_h = min(40 * k, (h - y0 - 50 * k) / max(len(rows), 1))
         vmin = min(min(r[1] for r in rows), base)
         vmax = max(max(r[2] for r in rows), base)
         span = (vmax - vmin) or 1e-9
         X = lambda v: left + (v - vmin) / span * (right - left)
 
-        c.create_text(24, 28, anchor="w", font=th.F_TITLE, fill=th.INK,
+        c.create_text(24 * k, 22 * k, anchor="w", font=th.F_TITLE, fill=th.INK,
                       text=f"Top event with each event x{lo:g} (blue) and x{hi:g} (red)")
-        c.create_text(24, 52, anchor="w", font=th.F_SMALL, fill=th.MUTED,
+        c.create_text(24 * k, 44 * k, anchor="w", font=th.F_SMALL, fill=th.MUTED,
                       text="Longest bar first: the event that moves the risk most.")
         for i, (e, q_lo, q_hi) in enumerate(rows):
             y = y0 + i * row_h + row_h / 2
             if i % 2 == 0:
-                c.create_rectangle(16, y - row_h / 2, w - 16, y + row_h / 2, fill=th.SUBTLE, outline="")
-            c.create_text(28, y, anchor="w", font=th.F_SMALL_BOLD, fill=th.MUTED, text=e)
-            c.create_text(70, y, anchor="w", font=th.F_BASE, fill=th.INK, text=vm.BASIC_EVENTS[e][0])
+                c.create_rectangle(16 * k, y - row_h / 2, w - 16 * k, y + row_h / 2, fill=th.SUBTLE, outline="")
+            c.create_text(28 * k, y, anchor="w", font=th.F_SMALL_BOLD, fill=th.MUTED, text=e)
+            c.create_text(70 * k, y, anchor="w", font=th.F_BASE, fill=th.INK, text=vm.BASIC_EVENTS[e][0])
             bh = row_h * 0.28
             th.round_rect(c, X(min(q_lo, base)), y - bh, X(base), y + bh, r=4,
                           fill=self.BLUE, outline="")
             th.round_rect(c, X(base), y - bh, X(max(q_hi, base)), y + bh, r=4,
                           fill=self.RED, outline="")
-            c.create_text(X(max(q_hi, base)) + 10, y, anchor="w", font=th.F_SMALL,
+            c.create_text(X(max(q_hi, base)) + 10 * k, y, anchor="w", font=th.F_SMALL,
                           fill=th.MUTED, text=f"{q_lo:.5f} - {q_hi:.5f}")
         yb = y0 + len(rows) * row_h
-        c.create_line(X(base), y0 - 8, X(base), yb + 8, fill=th.INK, dash=(4, 3))
-        c.create_text(X(base), yb + 24, font=th.F_SMALL_BOLD, fill=th.INK, text=f"baseline {base:.5f}")
+        c.create_line(X(base), y0 - 8 * k, X(base), yb + 8 * k, fill=th.INK, dash=(4, 3))
+        c.create_text(X(base), yb + 18 * k, font=th.F_SMALL_BOLD, fill=th.INK, text=f"baseline {base:.5f}")
 
 
 class BayesTab(ttk.Frame):
@@ -226,9 +238,10 @@ class BayesTab(ttk.Frame):
         self.params = dict(vm.DEFAULT_BN_PARAMS)
         self.extra_evidence = {}   # evidence set on the diagram for nodes without radio buttons
 
-        left = ttk.Frame(self, style="Page.TFrame")
-        left.pack(side="left", fill="y")
-        ev = th.Card(left, text="EVIDENCE  ·  WHAT WE OBSERVE", padding=12)
+        panel = th.ScrollPanel(self)
+        panel.pack(side="left", fill="y")
+        left = panel.body
+        ev = th.Card(left, text="EVIDENCE  ·  WHAT WE OBSERVE", padding=(12, 8))
         ev.pack(fill="x")
         self.evidence = {}
         for r, n in enumerate(self.EVIDENCE_NODES):
@@ -240,9 +253,9 @@ class BayesTab(ttk.Frame):
             self.evidence[n] = v
         ttk.Label(ev, text="Other nodes: right-click them in the diagram.",
                   style="Muted.TLabel").grid(row=len(self.EVIDENCE_NODES), column=0, columnspan=4,
-                                             sticky="w", pady=(6, 0))
+                                             sticky="w", pady=(4, 0))
 
-        op = th.Card(left, text="CHANGES TO THE SYSTEM", padding=12)
+        op = th.Card(left, text="CHANGES TO THE SYSTEM", padding=(12, 8))
         op.pack(fill="x", pady=(PAD, 0))
         self.options = {}
         for k, label in vm.OPTIONS.items():
@@ -250,23 +263,23 @@ class BayesTab(ttk.Frame):
             ttk.Checkbutton(op, text=label, variable=v, command=self.calculate).pack(anchor="w")
             self.options[k] = v
 
-        bar = th.Card(left, text="MODEL", padding=12)
+        bar = th.Card(left, text="MODEL", padding=(12, 8))
         bar.pack(fill="x", pady=(PAD, 0))
         ttk.Button(bar, text="Clear evidence and changes", command=self.clear).pack(fill="x")
-        ttk.Button(bar, text="Edit all parameters…", command=self.edit_params).pack(fill="x", pady=6)
+        ttk.Button(bar, text="Edit all parameters…", command=self.edit_params).pack(fill="x", pady=4)
         ttk.Button(bar, text="Node probability table…", command=self.show_table).pack(fill="x")
 
         self.diagram = BayesDiagram(self, app)
         self.diagram.pack(side="left", fill="both", expand=True, padx=(PAD, 0))
         self.cmp = ttk.Treeview(self.diagram.extra, columns=("opt", "u", "c"), show="headings", height=5)
-        for col, txt, wd in [("opt", "Option", 222), ("u", "P(unsafe)", 78),
-                             ("c", "P(contam.)", 84)]:
+        for col, txt, wd in [("opt", "Option", 160), ("u", "P(unsafe)", 80),
+                             ("c", "P(contam.)", 86)]:
             self.cmp.heading(col, text=txt, anchor="w" if col == "opt" else "e")
-            self.cmp.column(col, width=wd, anchor="w" if col == "opt" else "e")
+            self.cmp.column(col, width=th.px(wd), anchor="w" if col == "opt" else "e")
         self.cmp.tag_configure("best", foreground=th.GOOD)
         self.cmp.pack(fill="both", expand=True)
         ttk.Label(self.diagram.extra, text="Each option alone, not combined with the ticked changes.",
-                  style="Muted.TLabel").pack(anchor="w", pady=(6, 0))
+                  style="Muted.TLabel", wraplength=th.px(300)).pack(anchor="w", pady=(6, 0))
         self.calculate()
 
     def current_evidence(self):
@@ -317,7 +330,7 @@ class BayesTab(ttk.Frame):
         for col, txt, wd in [("node", "Node", 70), ("label", "Meaning", 240),
                              ("prior", "Without evidence", 130), ("post", "Now", 100), ("ratio", "Change", 80)]:
             tree.heading(col, text=txt)
-            tree.column(col, width=wd, anchor="w" if col in ("node", "label") else "e")
+            tree.column(col, width=th.px(wd), anchor="w" if col in ("node", "label") else "e")
         for n in vm.BN_LABELS:
             ratio = post[n] / prior[n] if prior[n] > 0 else float("nan")
             tag = "ev" if n in ev else ("up" if ratio > 1.5 else ("down" if ratio < 0.67 else ""))
@@ -393,7 +406,7 @@ class ValidationTab(ttk.Frame):
         card.pack(fill="x", pady=(PAD, 0))
         ttk.Label(card, text="Observed frequency with 95 % confidence interval vs the model's "
                              "prediction without evidence (Bayesian network tab parameters).",
-                  style="Muted.TLabel", wraplength=1000).pack(anchor="w", pady=(0, 10))
+                  style="Muted.TLabel", wraplength=th.px(1000)).pack(anchor="w", pady=(0, 10))
         self.tree = ttk.Treeview(card, columns=("col", "node", "k", "obs", "ci", "model", "v"),
                                  show="headings", height=8)
         for col, txt, wd in [("col", "Data column", 220), ("node", "Node", 70), ("k", "Events / batches", 140),
@@ -401,13 +414,13 @@ class ValidationTab(ttk.Frame):
                              ("model", "Model", 100), ("v", "Verdict", 140)]:
             anchor = "w" if col in ("col", "v") else "e"
             self.tree.heading(col, text=txt, anchor=anchor)
-            self.tree.column(col, width=wd, anchor=anchor)
+            self.tree.column(col, width=th.px(wd), anchor=anchor)
         self.tree.pack(fill="x")
         self.tree.tag_configure("bad", foreground=th.RISK, background=th.RISK_SOFT)
         self.tree.tag_configure("good", foreground=th.INK)
         ttk.Label(card, text="A 'CHECK MODEL' verdict means the data contradict the model: "
                              "question the structure or recalibrate the parameter, then justify the change.",
-                  style="Muted.TLabel", wraplength=1000).pack(anchor="w", pady=(10, 0))
+                  style="Muted.TLabel", wraplength=th.px(1000)).pack(anchor="w", pady=(10, 0))
 
     def load(self):
         path = filedialog.askopenfilename(filetypes=[("CSV files", "*.csv"), ("All files", "*.*")])
@@ -438,11 +451,14 @@ class ValidationTab(ttk.Frame):
 
 class App(tk.Tk):
     def __init__(self):
+        th.enable_dpi_awareness()
         super().__init__()
         self.title(APP_TITLE)
-        self.geometry("1500x920")   # size when not maximised
-        self.minsize(1280, 820)
+        self.geometry("1500x920")   # size when not maximised (scaled below)
+        self.minsize(1000, 600)
         th.apply(self)
+        global PAD
+        PAD = th.px(12)
         th.header(self, APP_TITLE, "Risk & resilience modelling of a socio-technical production cell",
                   f"Developer: {DEVELOPER}\n{AFFILIATION}").pack(fill="x")
         nb = ttk.Notebook(self)
@@ -460,6 +476,8 @@ class App(tk.Tk):
         nb.add(self.validation, text="4. Validation")
         self.fta.calculate()
         self.bayes.calculate()
+        self.geometry(f"{th.px(1500)}x{th.px(920)}")
+        self.minsize(th.px(1000), th.px(600))
         self.maximize()
 
     def maximize(self):

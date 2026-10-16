@@ -252,6 +252,14 @@ def apply_options(params, options):
     return p
 
 
+class _Network(list):
+    """Node list in topological order, tagged with its effective parameters.
+
+    The tag lets bn_query reuse the joint distribution table between queries.
+    """
+    key = None
+
+
 def build_bn(params=None, options=None):
     """Return the node list in topological order."""
     p = apply_options(params or DEFAULT_BN_PARAMS, options or {})
@@ -262,7 +270,7 @@ def build_bn(params=None, options=None):
     def det(name, parents, fn):
         return {"name": name, "type": "det", "parents": parents, "fn": fn}
 
-    return [
+    nodes = _Network([
         cpt("TP", [], lambda: p["P_TP"]),
         cpt("DI", [], lambda: p["P_DI_DOWN"]),
         cpt("PF", [], lambda: p["P_PF"]),
@@ -281,7 +289,50 @@ def build_bn(params=None, options=None):
         cpt("B10", [], lambda: p["B10"]),
         det("QM", ["RB", "B8", "B10"], lambda *x: any(x)),
         det("U", ["C", "QM"], lambda a, b: a and b),
-    ]
+    ])
+    nodes.key = tuple(sorted(p.items()))
+    return nodes
+
+
+_WORLD_CACHE = {}
+
+
+def _worlds(nodes):
+    """All joint states with non-zero weight, as (weight, bitmask) pairs.
+
+    Bit i of the mask is set when node i is True. Cached per parameter set,
+    so evidence queries only filter this table instead of re-enumerating.
+    """
+    key = getattr(nodes, "key", None)
+    if key is not None and key in _WORLD_CACHE:
+        return _WORLD_CACHE[key]
+    names = [n["name"] for n in nodes]
+    index = {name: i for i, name in enumerate(names)}
+    free = [n["name"] for n in nodes if n["type"] == "cpt"]
+    worlds = []
+    for values in product((False, True), repeat=len(free)):
+        draw = dict(zip(free, values))
+        state, w, mask = {}, 1.0, 0
+        for n in nodes:
+            name = n["name"]
+            args = [state[x] for x in n["parents"]]
+            if n["type"] == "det":
+                v = n["fn"](*args)
+            else:
+                v = draw[name]
+                pt = n["fn"](*args)
+                w *= pt if v else 1 - pt
+            state[name] = v
+            if v:
+                mask |= 1 << index[name]
+        if w > 0:
+            worlds.append((w, mask))
+    result = (names, index, worlds)
+    if key is not None:
+        if len(_WORLD_CACHE) > 64:
+            _WORLD_CACHE.clear()
+        _WORLD_CACHE[key] = result
+    return result
 
 
 def bn_query(nodes, evidence=None, do=None):
@@ -293,6 +344,26 @@ def bn_query(nodes, evidence=None, do=None):
     """
     evidence = evidence or {}
     do = do or {}
+    if not do:
+        names, index, worlds = _worlds(nodes)
+        ev_mask = ev_val = 0
+        for k, val in evidence.items():
+            ev_mask |= 1 << index[k]
+            if val:
+                ev_val |= 1 << index[k]
+        totals = [0.0] * len(names)
+        z = 0.0
+        for w, m in worlds:
+            if m & ev_mask != ev_val:
+                continue
+            z += w
+            while m:
+                low = m & -m
+                totals[low.bit_length() - 1] += w
+                m ^= low
+        if z == 0:
+            raise ValueError("The evidence is impossible under this model.")
+        return {name: totals[i] / z for i, name in enumerate(names)}
     free = [n["name"] for n in nodes if n["type"] == "cpt" and n["name"] not in do]
     totals = {n["name"]: 0.0 for n in nodes}
     z = 0.0

@@ -46,13 +46,51 @@ F_BOLD = (FAMILY, 10, "bold")
 F_SMALL_BOLD = (FAMILY, 9, "bold")
 F_TITLE = (FAMILY, 12, "bold")
 F_SECTION = (FAMILY, 9, "bold")
-F_KPI = (FAMILY, 26, "bold")
-F_APP = (FAMILY, 15, "bold")
+F_KPI = (FAMILY, 22, "bold")
+F_APP = (FAMILY, 13, "bold")
 F_MONO = (MONO_FAMILY, 10)
+
+
+# -- high-DPI support ---------------------------------------------------------
+S = 1.0   # UI scale factor: 1.0 at 96 dpi (100 %), 1.5 at 144 dpi (150 %)
+
+
+def enable_dpi_awareness():
+    """Ask Windows to let us draw at the real resolution (sharp, not stretched).
+
+    Must run before the Tk window is created. Does nothing on other systems.
+    """
+    if not sys.platform.startswith("win"):
+        return
+    try:
+        import ctypes
+        try:
+            ctypes.windll.shcore.SetProcessDpiAwareness(1)      # system DPI aware
+        except Exception:
+            ctypes.windll.user32.SetProcessDPIAware()
+    except Exception:
+        pass
+
+
+def px(v):
+    """Scale a pixel distance designed at 100 % to the current display."""
+    return int(round(v * S))
+
+
+def pxs(v):
+    """Scale an int or a tuple of pixel distances (paddings)."""
+    if isinstance(v, (tuple, list)):
+        return tuple(px(x) for x in v)
+    return px(v)
 
 
 def apply(root):
     """Configure fonts and ttk styles for the whole application."""
+    global S
+    try:
+        S = max(1.0, root.winfo_fpixels("1i") / 96.0)
+    except tk.TclError:
+        S = 1.0
     for name in ("TkDefaultFont", "TkTextFont", "TkMenuFont", "TkHeadingFont", "TkCaptionFont"):
         try:
             tkfont.nametofont(name).configure(family=FAMILY, size=10)
@@ -82,11 +120,14 @@ def apply(root):
     s.configure("Card.TFrame", background=CARD, bordercolor=LINE, lightcolor=LINE,
                 darkcolor=LINE, relief="solid", borderwidth=1)
     s.configure("Section.TLabel", background=PAGE, foreground=MUTED, font=F_SECTION)
+    s.configure("TPanedwindow", background=PAGE)
+    s.configure("Sash", sashthickness=px(10), gripcount=0, background=PAGE, bordercolor=PAGE,
+                lightcolor=PAGE, darkcolor=PAGE, handlesize=0)
 
     # buttons
     s.configure("TButton", background="#f1f5f9", foreground=INK, bordercolor="#cbd5e1",
                 lightcolor="#f1f5f9", darkcolor="#f1f5f9", relief="raised", borderwidth=1,
-                padding=(12, 6), focusthickness=0, focuscolor="#f1f5f9")
+                padding=pxs((10, 4)), focusthickness=0, focuscolor="#f1f5f9")
     s.map("TButton",
           background=[("pressed", "#cbd5e1"), ("active", "#e2e8f0")],
           lightcolor=[("pressed", "#cbd5e1"), ("active", "#e2e8f0")],
@@ -101,12 +142,13 @@ def apply(root):
 
     # inputs
     s.configure("TEntry", fieldbackground=CARD, foreground=INK, bordercolor=LINE,
-                lightcolor=CARD, darkcolor=CARD, padding=(6, 3))
+                lightcolor=CARD, darkcolor=CARD, padding=pxs((6, 2)))
     s.map("TEntry", bordercolor=[("focus", ACCENT)], lightcolor=[("focus", ACCENT_SOFT)])
     for w in ("TRadiobutton", "TCheckbutton"):
         s.configure(w, background=CARD, foreground=INK, indicatorbackground=CARD,
                     indicatorforeground=CARD, upperbordercolor=FAINT, lowerbordercolor=FAINT,
-                    indicatormargin=(0, 0, 6, 0), padding=(2, 3), focuscolor=CARD)
+                    indicatormargin=pxs((0, 0, 5, 0)), padding=pxs((2, 1)), focuscolor=CARD,
+                    indicatorsize=px(12))
         s.map(w,
               indicatorbackground=[("selected", ACCENT), ("active", ACCENT_SOFT)],
               upperbordercolor=[("selected", ACCENT)], lowerbordercolor=[("selected", ACCENT)],
@@ -114,23 +156,23 @@ def apply(root):
 
     # tables
     s.configure("Treeview", background=CARD, fieldbackground=CARD, foreground=INK,
-                bordercolor=LINE, lightcolor=CARD, darkcolor=CARD, rowheight=26, borderwidth=0)
+                bordercolor=LINE, lightcolor=CARD, darkcolor=CARD, rowheight=px(26), borderwidth=0)
     s.map("Treeview", background=[("selected", ACCENT_SOFT)], foreground=[("selected", INK)])
     s.configure("Treeview.Heading", background=SUBTLE, foreground=MUTED, font=F_SMALL_BOLD,
-                relief="flat", bordercolor=LINE, lightcolor=SUBTLE, darkcolor=SUBTLE, padding=(8, 6))
+                relief="flat", bordercolor=LINE, lightcolor=SUBTLE, darkcolor=SUBTLE, padding=pxs((8, 6)))
     s.map("Treeview.Heading", background=[("active", "#eef2f7")])
 
     # scrollbars
     for orient in ("Vertical", "Horizontal"):
         s.configure(f"{orient}.TScrollbar", background="#cbd5e1", troughcolor=CARD,
                     bordercolor=CARD, lightcolor="#cbd5e1", darkcolor="#cbd5e1",
-                    arrowcolor=MUTED, gripcount=0, arrowsize=12)
+                    arrowcolor=MUTED, gripcount=0, arrowsize=px(12))
         s.map(f"{orient}.TScrollbar", background=[("active", FAINT)])
 
     # notebook = dark tab bar under the header
     s.configure("TNotebook", background=HEADER, bordercolor=HEADER, lightcolor=HEADER,
                 darkcolor=HEADER, borderwidth=0, tabmargins=(16, 0, 16, 0))
-    s.configure("TNotebook.Tab", background=HEADER, foreground=HEADER_MUTED, padding=(20, 10),
+    s.configure("TNotebook.Tab", background=HEADER, foreground=HEADER_MUTED, padding=pxs((16, 7)),
                 bordercolor=HEADER, lightcolor=HEADER, darkcolor=HEADER, font=F_BOLD,
                 focuscolor=HEADER)
     s.map("TNotebook.Tab",
@@ -143,13 +185,15 @@ def apply(root):
 
 def header(root, title, subtitle, right_text):
     """Dark app header above the tab bar."""
-    bar = tk.Frame(root, bg=HEADER, padx=20, pady=12)
-    logo = tk.Canvas(bar, width=28, height=28, bg=HEADER, highlightthickness=0)
-    round_rect(logo, 2, 2, 26, 26, r=7, fill=ACCENT, outline="")
-    logo.create_polygon(14, 7, 21, 14, 14, 21, 7, 14, fill="#ffffff", outline="")
-    logo.pack(side="left", padx=(0, 12))
+    bar = tk.Frame(root, bg=HEADER, padx=px(16), pady=px(7))
+    k = S
+    logo = tk.Canvas(bar, width=px(24), height=px(24), bg=HEADER, highlightthickness=0)
+    round_rect(logo, 1, 1, 23 * k, 23 * k, r=6 * k, fill=ACCENT, outline="")
+    logo.create_polygon(12 * k, 6 * k, 18 * k, 12 * k, 12 * k, 18 * k, 6 * k, 12 * k,
+                        fill="#ffffff", outline="")
+    logo.pack(side="left", padx=(0, px(10)))
     tk.Label(bar, text=title, bg=HEADER, fg=HEADER_TEXT, font=F_APP).pack(side="left")
-    tk.Label(bar, text=subtitle, bg=HEADER, fg=HEADER_MUTED, font=F_BASE).pack(side="left", padx=(14, 0))
+    tk.Label(bar, text=subtitle, bg=HEADER, fg=HEADER_MUTED, font=F_BASE).pack(side="left", padx=(px(14), 0))
     tk.Label(bar, text=right_text, bg=HEADER, fg=HEADER_MUTED, font=F_SMALL,
              justify="right").pack(side="right")
     return bar
@@ -183,8 +227,8 @@ class Card(ttk.Frame):
     def __init__(self, parent, text="", padding=12, **kw):
         self._outer = ttk.Frame(parent, style="Page.TFrame")
         self._title = ttk.Label(self._outer, text=text, style="Section.TLabel")
-        self._title.pack(anchor="w", pady=(0, 6))
-        super().__init__(self._outer, style="Card.TFrame", padding=padding, **kw)
+        self._title.pack(anchor="w", pady=(0, px(4)))
+        super().__init__(self._outer, style="Card.TFrame", padding=pxs(padding), **kw)
         ttk.Frame.pack_configure(self, fill="both", expand=True)
 
     def pack_configure(self, *a, **kw):
@@ -210,7 +254,7 @@ class Card(ttk.Frame):
 _font_cache = {}
 
 
-def fit_font(text, max_width, size=9, bold=True, min_size=8):
+def fit_font(text, max_width, size=9, bold=True, min_size=7):
     """Largest font (down to min_size) in which text fits max_width pixels."""
     for sz in range(size, min_size - 1, -1):
         key = (sz, bold)
@@ -219,3 +263,85 @@ def fit_font(text, max_width, size=9, bold=True, min_size=8):
         if _font_cache[key].measure(text) <= max_width:
             return (FAMILY, sz, "bold") if bold else (FAMILY, sz)
     return (FAMILY, min_size, "bold") if bold else (FAMILY, min_size)
+
+
+class ScrollPanel(ttk.Frame):
+    """A column that scrolls vertically when it is taller than the window.
+
+    Put children into .body. The scrollbar only appears when needed.
+    """
+
+    def __init__(self, parent, width=None, **kw):
+        super().__init__(parent, style="Page.TFrame", **kw)
+        self._canvas = tk.Canvas(self, bg=PAGE, highlightthickness=0, bd=0)
+        self._bar = ttk.Scrollbar(self, orient="vertical", command=self._canvas.yview)
+        self._canvas.configure(yscrollcommand=self._bar.set)
+        self.body = ttk.Frame(self._canvas, style="Page.TFrame")
+        self._win = self._canvas.create_window(0, 0, window=self.body, anchor="nw")
+        self._canvas.pack(side="left", fill="both", expand=True)
+        self.body.bind("<Configure>", self._on_body)
+        self._canvas.bind("<Configure>", self._on_canvas)
+        for w in (self._canvas, self.body):
+            w.bind("<Enter>", lambda e: self._bind_wheel(True))
+            w.bind("<Leave>", lambda e: self._bind_wheel(False))
+
+    def _on_body(self, _e=None):
+        self._canvas.configure(scrollregion=self._canvas.bbox("all"),
+                               width=self.body.winfo_reqwidth())
+        self._update_bar()
+
+    def _on_canvas(self, e):
+        self._canvas.itemconfigure(self._win, width=e.width)
+        self._update_bar()
+
+    def _update_bar(self):
+        need = self.body.winfo_reqheight() > self._canvas.winfo_height() > 1
+        if need and not self._bar.winfo_ismapped():
+            self._bar.pack(side="right", fill="y", before=self._canvas)
+        elif not need and self._bar.winfo_ismapped():
+            self._bar.pack_forget()
+            self._canvas.yview_moveto(0)
+
+    def _bind_wheel(self, on):
+        if on:
+            self._canvas.bind_all("<MouseWheel>", self._wheel)
+            self._canvas.bind_all("<Button-4>", lambda e: self._scroll(-1))
+            self._canvas.bind_all("<Button-5>", lambda e: self._scroll(1))
+        else:
+            self._canvas.unbind_all("<MouseWheel>")
+            self._canvas.unbind_all("<Button-4>")
+            self._canvas.unbind_all("<Button-5>")
+
+    def _wheel(self, e):
+        self._scroll(-1 if e.delta > 0 else 1)
+
+    def _scroll(self, step):
+        if self._bar.winfo_ismapped():
+            self._canvas.yview_scroll(step * 2, "units")
+
+
+def clamp(x, lo, hi):
+    return max(lo, min(hi, x))
+
+
+def fits(text, font):
+    """True if text fits in one line in the given (family, size[, 'bold']) font."""
+    key = (font[1], len(font) > 2)
+    if key not in _font_cache:
+        _font_cache[key] = tkfont.Font(family=FAMILY, size=font[1],
+                                       weight="bold" if len(font) > 2 else "normal")
+    return _font_cache[key]
+
+
+def label_font(text, max_width, size=9):
+    """Font and wrap width for a box label: shrink first, then wrap at spaces."""
+    font = fit_font(text, max_width, size=size)
+    if fits(text, font).measure(text) <= max_width:
+        return font, 0
+    words = text.split()
+    if len(words) > 1:
+        longest = max(words, key=len)
+        font = fit_font(longest, max_width, size=size)
+        if fits(longest, font).measure(longest) <= max_width:
+            return font, max_width
+    return fit_font(text, max_width, size=size), 0
