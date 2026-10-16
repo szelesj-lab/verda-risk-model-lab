@@ -1,14 +1,16 @@
 """
-Generate fictional VERDA batch records for the validation exercise.
+Generate fictional batch records for the validation exercise.
 
 Developer: József Szeles, Department of System Engineering, University of Pannonia
 
-The records are drawn from the Bayesian network, but the "real" cell has
-more handover time pressure than the model assumes (0.35 instead of 0.2).
-Students should find this mismatch on the Validation tab, recalibrate
-P_TP and explain the effect on the top event.
+The records are drawn from the Bayesian network of the active model, with
+the "true" parameter values given in the model file under
+sample_data.overrides. For VERDA the real cell has more handover time
+pressure than the model assumes (0.35 instead of 0.2). Students should
+find this mismatch on the Validation tab, recalibrate P_TP and explain
+the effect on the top event.
 
-    python generate_data.py [output.csv] [number_of_batches]
+    python generate_data.py [output.csv] [number_of_batches] [--model file.json]
 """
 
 import csv
@@ -17,12 +19,20 @@ import sys
 
 import verda_model as vm
 
-TRUE_PARAMS = {**vm.DEFAULT_BN_PARAMS, "P_TP": 0.35}
+
+def true_params():
+    """Network parameters of the simulated 'real' system."""
+    return {**vm.DEFAULT_BN_PARAMS, **vm.SAMPLE_DATA["overrides"]}
 
 
-def sample_batches(n=200, seed=2026, params=TRUE_PARAMS):
+TRUE_PARAMS = true_params()   # for the bundled VERDA model
+
+
+def sample_batches(n=None, seed=None, params=None):
+    n = vm.SAMPLE_DATA["n"] if n is None else n
+    seed = vm.SAMPLE_DATA["seed"] if seed is None else seed
     rng = random.Random(seed)
-    nodes = vm.build_bn(params)
+    nodes = vm.build_bn(params or true_params())
     rows = []
     for i in range(n):
         s = {}
@@ -38,7 +48,7 @@ def sample_batches(n=200, seed=2026, params=TRUE_PARAMS):
     return rows
 
 
-def write_csv(path="verda_batch_records.csv", n=200, seed=2026):
+def write_csv(path="verda_batch_records.csv", n=None, seed=None):
     rows = sample_batches(n, seed)
     with open(path, "w", newline="", encoding="utf-8") as f:
         w = csv.DictWriter(f, fieldnames=list(rows[0]))
@@ -48,6 +58,11 @@ def write_csv(path="verda_batch_records.csv", n=200, seed=2026):
 
 
 if __name__ == "__main__":
-    out = sys.argv[1] if len(sys.argv) > 1 else "verda_batch_records.csv"
-    n = int(sys.argv[2]) if len(sys.argv) > 2 else 200
+    args = sys.argv[1:]
+    if "--model" in args:
+        i = args.index("--model")
+        vm.load_model(args[i + 1])
+        del args[i:i + 2]
+    out = args[0] if args else "verda_batch_records.csv"
+    n = int(args[1]) if len(args) > 1 else None
     print("Wrote", write_csv(out, n))

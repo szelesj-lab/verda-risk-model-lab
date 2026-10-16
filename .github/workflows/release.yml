@@ -37,7 +37,7 @@ jobs:
       - name: Build the .exe
         run: |
           python -m pip install --upgrade pip pyinstaller
-          python -m PyInstaller --onefile --windowed --name VERDA_Risk_Lab verda_app.py
+          python -m PyInstaller --onefile --windowed --name VERDA_Risk_Lab --add-data "models;models" verda_app.py
 
       - name: Package release files
         shell: pwsh
@@ -45,6 +45,8 @@ jobs:
           New-Item -ItemType Directory -Force release | Out-Null
           Copy-Item dist\VERDA_Risk_Lab.exe release\
           Copy-Item verda_batch_records.csv release\
+          Copy-Item -Recurse models release\models
+          Copy-Item MODEL_FORMAT.md release\
           Copy-Item README.md release\
           Compress-Archive -Path release\* -DestinationPath "VERDA_Risk_Lab_$env:TAG.zip"
 
@@ -57,7 +59,8 @@ jobs:
           VERDA Risk Model Lab $env:TAG
 
           Download **VERDA_Risk_Lab.exe** and double-click it (Windows, no installation needed).
-          The zip also contains the sample batch records for the validation exercise.
+          The zip also contains the sample batch records for the validation exercise and
+          the model files (models folder) that can be opened with *Open model…*.
 
           If Windows SmartScreen warns, choose *More info -> Run anyway*.
           "@

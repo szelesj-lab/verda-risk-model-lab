@@ -28,34 +28,43 @@ FONT_T = th.F_TITLE
 INK, QUIET, EDGE = th.INK, th.MUTED, th.FAINT
 HILITE = th.ACCENT
 
-FTA_SHORT = {
-    "TOP": "Unsafe release", "CONTAM": "Contamination", "QCFAIL": "QC fails to detect",
-    "PRES": "Poor preservation", "HOT": "Added above 40 C", "NOZZLE": "Nozzle contam.",
-    "B1": "Under-weighed", "B2": "Material swapped", "B3": "Probe reads low",
-    "B4": "No cross-check", "B5": "pH not corrected", "B6": "Sanitation skipped",
-    "B7": "Sanitiser bad", "B8": "Bad sample", "B9": "Released early",
-    "B10": "False pass",
-}
+# Labels and positions come from the active model file. These names are kept
+# for older code; the tables are updated in place when a model is loaded.
+FTA_SHORT = vm.FTA_SHORT
+BN_SHORT = vm.BN_SHORT
 
-BN_SHORT = {
-    "TP": "Time pressure", "DI": "Instructions down", "PF": "Probe fault",
-    "B1": "Under-weighed", "B2": "Material swap", "B4": "No cross-check",
-    "HOT": "Added hot", "B5": "pH not fixed", "PRES": "Poor preservation",
-    "SS": "Sanitation skipped", "B7": "Sanitiser bad", "NOZZLE": "Nozzle contam.",
-    "C": "Contamination", "RB": "Released early", "B8": "Bad sample",
-    "B10": "False pass", "QM": "QC misses it", "U": "Unsafe release",
-}
 
-# (column fraction of width, row) for each BN node
-BN_LAYOUT = {
-    "PF": (0.225, 0), "DI": (0.33, 0), "TP": (0.70, 0),
-    "B1": (0.06, 1), "B2": (0.17, 1), "B4": (0.28, 1), "B5": (0.39, 1), "SS": (0.50, 1),
-    "B7": (0.61, 1), "RB": (0.72, 1), "B8": (0.83, 1), "B10": (0.94, 1),
-    "HOT": (0.225, 2),
-    "PRES": (0.20, 3), "NOZZLE": (0.55, 3), "QM": (0.83, 3),
-    "C": (0.38, 4),
-    "U": (0.60, 5),
-}
+def bn_positions():
+    """(x fraction, row) for every network node.
+
+    Uses the "layout" from the model file; nodes without one are placed
+    automatically: row = longest path from a root node, spread evenly.
+    """
+    given = {n: tuple(v) for n, v in vm.BN_LAYOUT.items() if n in vm.BN_PARENTS}
+    if len(given) == len(vm.BN_PARENTS):
+        return given
+    depth = {}
+    for n in vm.NODE_ORDER:
+        ps = vm.BN_PARENTS[n]
+        depth[n] = max((depth[q] + 1 for q in ps), default=0)
+    rows = {}
+    for n in vm.NODE_ORDER:
+        rows.setdefault(depth[n], []).append(n)
+    pos = {}
+    for r, names in rows.items():
+        free = [n for n in names if n not in given]
+        for i, n in enumerate(free):
+            pos[n] = (0.06 + 0.88 * (i + 0.5) / len(free), r)
+    pos.update(given)
+    return pos
+
+
+def rule_text(kind, k=None, n=None):
+    if kind == "AND":
+        return "all parents are yes"
+    if kind == "VOTE":
+        return f"at least {k} of the {n} parents are yes"
+    return "at least one parent is yes"
 
 
 def mix(c1, c2, t):
@@ -117,7 +126,7 @@ class FaultTreeDiagram(ttk.Frame):
         btns.pack(side="left", fill="y", pady=(th.px(22), 0))
         ttk.Button(btns, text="Clear highlight", command=self.clear_highlight).pack(fill="x")
         ttk.Button(btns, text="Save diagram (.eps)",
-                   command=lambda: save_eps(self.canvas, self, "verda_fault_tree.eps")).pack(fill="x", pady=6)
+                   command=lambda: save_eps(self.canvas, self, f"{vm.slug()}_fault_tree.eps")).pack(fill="x", pady=6)
 
         pane.add(top, weight=1)
         pane.add(bottom, weight=0)
@@ -160,14 +169,15 @@ class FaultTreeDiagram(ttk.Frame):
         order, depth = [], {}
 
         def walk(n, d):
-            depth[n] = d
+            first = n not in depth
+            depth[n] = max(depth.get(n, 0), d)     # longest path from the top
             if n in vm.GATES:
                 for c in vm.GATES[n][1]:
                     walk(c, d + 1)
-            else:
+            elif first:
                 order.append(n)
 
-        walk("TOP", 0)
+        walk(vm.TOP, 0)
         k = th.S
         slot = (width - 32 * k) / max(len(order), 1)
         self.box_w = th.clamp(slot - 8 * k, 56 * k, self.BOX_W * k)
@@ -176,25 +186,29 @@ class FaultTreeDiagram(ttk.Frame):
         x = {leaf: margin + i * step for i, leaf in enumerate(order)}
 
         def place(n):
-            if n in vm.GATES:
+            if n in vm.GATES and n not in x:
                 xs = [place(c) for c in vm.GATES[n][1]]
                 x[n] = sum(xs) / len(xs)
             return x[n]
 
-        place("TOP")
+        place(vm.TOP)
         return x, depth
 
     def ancestors(self, events):
-        parent = {c: g for g, (_, cs, _) in vm.GATES.items() for c in cs}
-        out = set()
-        for e in events:
-            while e in parent:
-                e = parent[e]
-                out.add(e)
+        parents = {}
+        for g, (_, cs, _) in vm.GATES.items():
+            for c in cs:
+                parents.setdefault(c, []).append(g)
+        out, stack = set(), list(events)
+        while stack:
+            for g in parents.get(stack.pop(), []):
+                if g not in out:
+                    out.add(g)
+                    stack.append(g)
         return out
 
     # -- drawing ----------------------------------------------------------
-    def gate_symbol(self, kind, cx, cy, colour, r=13):
+    def gate_symbol(self, kind, cx, cy, colour, r=13, text=None):
         c = self.canvas
         k = r / 13
         if kind == "AND":
@@ -209,7 +223,7 @@ class FaultTreeDiagram(ttk.Frame):
                              cx, cy - 14 * k, cx - r + 2 * k, cy - 2 * k, smooth=True,
                              fill=th.CARD, outline=colour, width=1.5 * th.S)
         if r >= 10 * th.S:
-            c.create_text(cx, cy + 3 * k, text=kind, font=(th.FAMILY, 6, "bold"), fill=colour)
+            c.create_text(cx, cy + 3 * k, text=text or kind, font=(th.FAMILY, 6, "bold"), fill=colour)
 
     def draw(self):
         c = self.canvas
@@ -228,16 +242,19 @@ class FaultTreeDiagram(ttk.Frame):
         row = (h - y0 - bottom) / max(levels - 1, 1)
         bh = th.clamp(row * 0.45, 26 * k, self.BOX_H * k)
         y0 += bh / 2 - 22 * k
+        # keep the lowest boxes clear of the legend line
+        row = min(row, (h - bottom - 6 * k - bh / 2 - y0) / max(levels - 1, 1))
         Y = lambda n: y0 + depth[n] * row
         hl = self.selected_cut | self.ancestors(self.selected_cut)
         bw = self.box_w
-        q = g["TOP"]
+        q = g[vm.TOP]
         gap = row - bh
+        shared = set(vm.repeated_events())
         sym_r = th.clamp(gap * 0.2, 6 * k, 13 * k)
         lw, lw_hi = 1.2 * k, 2.5 * k
 
         c.create_text(20 * k, 20 * k, anchor="w", font=FONT_T, fill=INK,
-                      text=f"Fault tree: P(unsafe batch released) = {q:.5f} per batch"
+                      text=f"Fault tree: P({vm.top_label()}) = {q:.5f} {vm.UNIT}"
                            + (f"  (about 1 in {1 / q:,.0f})" if q > 0 else ""))
         if not compact:
             c.create_text(20 * k, 42 * k, anchor="w", font=FONT, fill=QUIET,
@@ -262,7 +279,8 @@ class FaultTreeDiagram(ttk.Frame):
             if gate in hl:
                 hx = [x[ch] for ch in children if ch in hl] + [gx]
                 c.create_line(min(hx), bus_y, max(hx), bus_y, fill=HILITE, width=lw_hi)
-            self.gate_symbol(kind, gx, sym_y, col, sym_r)
+            vote = f"{vm.GATE_K.get(gate)}/{len(children)}" if kind == "VOTE" else None
+            self.gate_symbol(kind, gx, sym_y, col, sym_r, vote)
 
         two_lines = bh >= 34 * k
         name_size = 9 if bh >= 40 * k else 8
@@ -271,8 +289,11 @@ class FaultTreeDiagram(ttk.Frame):
             is_gate = n in vm.GATES
             on = n in hl
             if is_gate:
-                fill = th.ACCENT_SOFT if n == "TOP" else "#f1f5f9"
-                sub = f"{vm.GATES[n][0]}  {g[n]:.5f}"
+                fill = th.ACCENT_SOFT if n == vm.TOP else "#f1f5f9"
+                kind = vm.GATES[n][0]
+                if kind == "VOTE":
+                    kind = f"{vm.GATE_K[n]}/{len(vm.GATES[n][1])}"
+                sub = f"{kind}  {g[n]:.5f}"
             else:
                 fill = mix("#ffffff", th.RISK_FILL, 0.9 * math.sqrt(fv.get(n, 0)))
                 sub = f"{n}  p={p[n]:g}"
@@ -281,7 +302,8 @@ class FaultTreeDiagram(ttk.Frame):
             tags = ("node", n) if is_gate else ("node", "event", n)
             bw = min(self.box_w * 1.45, (self.BOX_W + 12) * k) if is_gate else self.box_w
             round_rect(c, cx - bw / 2, cy - bh / 2, cx + bw / 2, cy + bh / 2, r=min(10 * k, bh / 3),
-                       fill=fill, outline=outline, width=lw_hi if sel else lw, tags=tags)
+                       fill=fill, outline=outline, width=lw_hi if sel else lw, tags=tags,
+                       dash=(5, 3) if n in shared and not sel else None)
             name_font, wrap = th.label_font(FTA_SHORT[n], bw - 8 * k, size=name_size)
             if two_lines and not wrap:
                 c.create_text(cx, cy - bh * 0.17, text=FTA_SHORT[n], font=name_font, fill=INK, tags=tags)
@@ -299,7 +321,8 @@ class FaultTreeDiagram(ttk.Frame):
                        fill=mix("#ffffff", th.RISK_FILL, 0.9 * math.sqrt(i / 5)), outline="#cbd5e1")
         if w > 620 * k:
             c.create_text(lx + 228 * k, ly, anchor="w", font=FONT, fill=QUIET,
-                          text="(low to high).   Gates assume independent events. All values illustrative.")
+                          text="(low to high).   Basic events are independent"
+                               + ("; dashed = repeated event (computed exactly)." if shared else "."))
 
     # -- interaction ------------------------------------------------------
     def on_click(self, event):
@@ -339,13 +362,15 @@ class FaultTreeDiagram(ttk.Frame):
         desc, layer, _ = vm.BASIC_EVENTS[e]
         imp = next(r for r in vm.importance(p) if r["event"] == e)
         cuts = [" . ".join(cs) for cs, _ in self.cut_rows if e in cs]
+        layer = f"   |   Layer: {layer}" if layer else ""
+        rep = "   |   appears in more than one branch" if e in vm.repeated_events() else ""
         self.info.insert("1.0",
-                         f"{e}: {desc}   |   Layer: {layer}   |   Probability: {p[e]:g} per batch\n\n"
+                         f"{e}: {desc}{layer}   |   Probability: {p[e]:g} {vm.UNIT}{rep}\n\n"
                          f"Fussell-Vesely: {imp['fussell_vesely']:.3f}  "
                          f"(share of top-event risk that involves {e})\n"
                          f"Birnbaum: {imp['birnbaum']:.5f}  "
                          f"(top-event change if {e} goes from never to certain)\n\n"
-                         f"In cut sets: {', '.join(cuts)}\n\n"
+                         f"In cut sets: {', '.join(cuts) or 'none'}\n\n"
                          f"Edit its probability in the field on the left (now selected).")
 
 
@@ -356,14 +381,15 @@ class BayesDiagram(ttk.Frame):
     def __init__(self, master, app):
         super().__init__(master, padding=0, style="Page.TFrame")
         self.app = app
-        self.selected = "SS"
+        with_parents = [n for n in vm.NODE_ORDER if n in vm.CPT_KEYS and vm.BN_PARENTS[n]]
+        self.selected = "SS" if "SS" in vm.CPT_KEYS else (with_parents or vm.NODE_ORDER)[0]
         bar = ttk.Frame(self, style="Page.TFrame")
         bar.pack(fill="x")
         ttk.Label(bar, text="Left-click a node: select it and edit its table below.   "
                             "Right-click a node: cycle its evidence (unknown \u2192 yes \u2192 no).",
                   style="Page.TLabel").pack(side="left")
         ttk.Button(bar, text="Save diagram (.eps)",
-                   command=lambda: save_eps(self.canvas, self, "verda_bayes_net.eps")).pack(side="right")
+                   command=lambda: save_eps(self.canvas, self, f"{vm.slug()}_bayes_net.eps")).pack(side="right")
 
         pane = ttk.Panedwindow(self, orient="vertical")
         pane.pack(fill="both", expand=True, pady=(8, 0))
@@ -408,7 +434,7 @@ class BayesDiagram(ttk.Frame):
         item = self.canvas.find_withtag("current")
         if not item:
             return None
-        return next((t for t in self.canvas.gettags(item[0]) if t in BN_LAYOUT), None)
+        return next((t for t in self.canvas.gettags(item[0]) if t in vm.BN_PARENTS), None)
 
     def on_select(self, _event):
         node = self.node_at_cursor()
@@ -446,8 +472,11 @@ class BayesDiagram(ttk.Frame):
         # left column: summary and evidence
         info = ttk.Frame(self.panel)
         info.pack(side="left", fill="y", padx=(0, 12))
+        gate = vm.DET_LOGIC.get(n)
+        if gate == "VOTE":
+            gate = f"{vm.DET_K[n]}-of-{len(parents)}"
         kind = ("root cause (no parents)" if not parents else
-                f"logic node: {vm.DET_LOGIC[n]} of its parents" if n in vm.DET_LOGIC else
+                f"logic node: {gate} of its parents" if n in vm.DET_LOGIC else
                 "probabilistic node")
         ttk.Label(info, text=f"Type: {kind}", style="Muted.TLabel", wraplength=th.px(190)).pack(anchor="w")
         ttk.Label(info, text="Parents: " + (", ".join(f"{p} ({BN_SHORT[p]})" for p in parents)
@@ -467,8 +496,8 @@ class BayesDiagram(ttk.Frame):
         tab = ttk.Frame(self.panel)
         tab.pack(side="left", fill="both", expand=True)
         if n in vm.DET_LOGIC:
-            rule = "all parents are yes" if vm.DET_LOGIC[n] == "AND" else "at least one parent is yes"
-            ttk.Label(tab, text=f"This is a logic ({vm.DET_LOGIC[n]}) node, so its table is fixed:\n"
+            rule = rule_text(vm.DET_LOGIC[n], vm.DET_K.get(n), len(parents))
+            ttk.Label(tab, text=f"This is a logic ({gate}) node, so its table is fixed:\n"
                                 f"P(yes) = 1 if {rule}, otherwise 0.\n\n"
                                 "To change the risk here, edit the tables of its parent nodes.",
                       foreground=QUIET, justify="left").pack(anchor="w")
@@ -556,27 +585,31 @@ class BayesDiagram(ttk.Frame):
         compact = h < 420 * k
         y0 = (62 if compact else 84) * k
         y1 = h - (34 if compact else 46) * k
-        row = (y1 - y0) / 5
+        layout = bn_positions()
+        nrows = max(max(r for _, r in layout.values()), 1)
+        row = (y1 - y0) / nrows
         bh = th.clamp(row * 0.62, 26 * k, self.BOX_H * k)
         bw = th.clamp(w * 0.11 - 10 * k, 64 * k, self.BOX_W * k)
         y0 += bh / 2
         y1 -= bh / 2
-        row = (y1 - y0) / 5
+        row = (y1 - y0) / nrows
         m = bw / 2 + 10 * k
         X = lambda fx: m + (fx - 0.06) / 0.88 * (w - 2 * m)
-        pos = {n: (X(fx), y0 + r * row) for n, (fx, r) in BN_LAYOUT.items()}
-        parents = {nd["name"]: nd["parents"] for nd in vm.build_bn(bt.params)}
+        pos = {n: (X(fx), y0 + r * row) for n, (fx, r) in layout.items()}
+        parents = vm.BN_PARENTS
+        q = vm.QUERY
 
         active = [vm.OPTIONS[k] for k, v in opts.items() if v]
         c.create_text(20 * k, 20 * k, anchor="w", font=FONT_T, fill=INK,
-                      text=f"Bayesian network: P(unsafe batch released) = {post['U']:.5f}"
-                           f"   (no evidence {prior['U']:.5f}, x{post['U'] / prior['U']:.2f})")
+                      text=f"Bayesian network: P({vm.query_label()}) = {post[q]:.5f}"
+                           f"   (no evidence {prior[q]:.5f}"
+                           + (f", x{post[q] / prior[q]:.2f})" if prior[q] > 0 else ")"))
         status = ("System changes: " + (", ".join(active) if active else "none")
                   + "   |   Evidence: "
                   + (", ".join(f"{BN_SHORT[k]}={'yes' if v else 'no'}" for k, v in ev.items())
                      if ev else "none"))
         if bt.params != vm.DEFAULT_BN_PARAMS:
-            d = vm.bn_query(vm.build_bn())["U"]
+            d = vm.bn_query(vm.build_bn())[q]
             changed = [k for k in bt.params if bt.params[k] != vm.DEFAULT_BN_PARAMS[k]]
             c.create_text(w - 20 * k, 42 * k, anchor="e", font=FONT_B, fill=th.WARN,
                           text=f"Edited model ({len(changed)} values changed) - default model: {d:.5f}")

@@ -1,0 +1,641 @@
+{
+  "format": "verda-risk-model",
+  "version": 1,
+  "meta": {
+    "name": "VERDA production cell (consultant version)",
+    "description": "The VERDA network as delivered by an external consultant. Review it against the batch records before anyone relies on it.",
+    "author": "József Szeles, Department of System Engineering, University of Pannonia",
+    "unit": "per batch",
+    "items": "batches",
+    "notes": "Final assignment: find what is wrong, fix it and justify every change."
+  },
+  "fault_tree": {
+    "top": "TOP",
+    "events": [
+      {
+        "id": "B1",
+        "label": "Under-weighed",
+        "description": "Preservative under-weighed",
+        "layer": "Human",
+        "p": 0.005
+      },
+      {
+        "id": "B2",
+        "label": "Material swapped",
+        "description": "Raw material swapped at weighing",
+        "layer": "Human",
+        "p": 0.002
+      },
+      {
+        "id": "B3",
+        "label": "Probe reads low",
+        "description": "Temperature probe reads low",
+        "layer": "Technology",
+        "p": 0.01
+      },
+      {
+        "id": "B4",
+        "label": "No cross-check",
+        "description": "Operator does not cross-check temperature",
+        "layer": "Human",
+        "p": 0.3
+      },
+      {
+        "id": "B5",
+        "label": "pH not corrected",
+        "description": "pH outside 5.0-5.5 not corrected",
+        "layer": "Process",
+        "p": 0.004
+      },
+      {
+        "id": "B6",
+        "label": "Sanitation skipped",
+        "description": "Nozzle sanitation skipped at shift handover",
+        "layer": "Organisation",
+        "p": 0.01
+      },
+      {
+        "id": "B7",
+        "label": "Sanitiser bad",
+        "description": "Sanitiser expired or ineffective",
+        "layer": "Process",
+        "p": 0.002
+      },
+      {
+        "id": "B8",
+        "label": "Bad sample",
+        "description": "QC sample not representative",
+        "layer": "Process",
+        "p": 0.05
+      },
+      {
+        "id": "B9",
+        "label": "Released early",
+        "description": "Batch released before micro result",
+        "layer": "Organisation",
+        "p": 0.02
+      },
+      {
+        "id": "B10",
+        "label": "False pass",
+        "description": "False 'pass' in electronic batch record",
+        "layer": "Data",
+        "p": 0.005
+      }
+    ],
+    "gates": [
+      {
+        "id": "TOP",
+        "label": "Unsafe release",
+        "description": "Unsafe batch released",
+        "type": "AND",
+        "inputs": [
+          "CONTAM",
+          "QCFAIL"
+        ]
+      },
+      {
+        "id": "CONTAM",
+        "label": "Contamination",
+        "description": "Contamination occurs",
+        "type": "OR",
+        "inputs": [
+          "PRES",
+          "NOZZLE"
+        ]
+      },
+      {
+        "id": "QCFAIL",
+        "label": "QC fails to detect",
+        "description": "QC fails to detect",
+        "type": "OR",
+        "inputs": [
+          "B8",
+          "B9",
+          "B10"
+        ]
+      },
+      {
+        "id": "PRES",
+        "label": "Poor preservation",
+        "description": "Inadequate preservation",
+        "type": "OR",
+        "inputs": [
+          "B1",
+          "B2",
+          "HOT",
+          "B5"
+        ]
+      },
+      {
+        "id": "HOT",
+        "label": "Added above 40 C",
+        "description": "Preservative added above 40 C",
+        "type": "AND",
+        "inputs": [
+          "B3",
+          "B4"
+        ]
+      },
+      {
+        "id": "NOZZLE",
+        "label": "Nozzle contam.",
+        "description": "Nozzle contamination",
+        "type": "OR",
+        "inputs": [
+          "B6",
+          "B7"
+        ]
+      }
+    ]
+  },
+  "bayesian_network": {
+    "query": "U",
+    "compare": [
+      "U",
+      "C"
+    ],
+    "evidence_panel": [
+      "TP",
+      "DI",
+      "PF",
+      "SS",
+      "RB",
+      "B8",
+      "B10",
+      "C",
+      "U"
+    ],
+    "nodes": [
+      {
+        "id": "TP",
+        "label": "Time pressure",
+        "description": "Handover time pressure",
+        "kind": "chance",
+        "parents": [],
+        "cpt": [
+          {
+            "when": {},
+            "p": 0.2,
+            "param": "P_TP"
+          }
+        ],
+        "layout": [
+          0.7,
+          0
+        ]
+      },
+      {
+        "id": "DI",
+        "label": "Instructions down",
+        "description": "Instructions down (Wi-Fi)",
+        "kind": "chance",
+        "parents": [],
+        "cpt": [
+          {
+            "when": {},
+            "p": 0.05,
+            "param": "P_DI_DOWN"
+          }
+        ],
+        "layout": [
+          0.33,
+          0
+        ]
+      },
+      {
+        "id": "PF",
+        "label": "Probe fault",
+        "description": "Probe fault (B3)",
+        "kind": "chance",
+        "parents": [],
+        "cpt": [
+          {
+            "when": {},
+            "p": 0.01,
+            "param": "P_PF"
+          }
+        ],
+        "layout": [
+          0.225,
+          0
+        ]
+      },
+      {
+        "id": "B1",
+        "label": "Under-weighed",
+        "description": "Preservative under-weighed",
+        "kind": "chance",
+        "parents": [
+          "DI"
+        ],
+        "cpt": [
+          {
+            "when": {
+              "DI": false
+            },
+            "p": 0.005,
+            "param": "B1_ok"
+          },
+          {
+            "when": {
+              "DI": true
+            },
+            "p": 0.015,
+            "param": "B1_down"
+          }
+        ],
+        "layout": [
+          0.06,
+          1
+        ]
+      },
+      {
+        "id": "B2",
+        "label": "Material swap",
+        "description": "Raw material swapped",
+        "kind": "chance",
+        "parents": [
+          "DI"
+        ],
+        "cpt": [
+          {
+            "when": {
+              "DI": false
+            },
+            "p": 0.002,
+            "param": "B2_ok"
+          },
+          {
+            "when": {
+              "DI": true
+            },
+            "p": 0.006,
+            "param": "B2_down"
+          }
+        ],
+        "layout": [
+          0.17,
+          1
+        ]
+      },
+      {
+        "id": "B4",
+        "label": "No cross-check",
+        "description": "No manual cross-check",
+        "kind": "chance",
+        "parents": [],
+        "cpt": [
+          {
+            "when": {},
+            "p": 0.3,
+            "param": "B4"
+          }
+        ],
+        "layout": [
+          0.28,
+          1
+        ]
+      },
+      {
+        "id": "HOT",
+        "label": "Added hot",
+        "description": "Added above 40 C",
+        "kind": "logic",
+        "gate": "AND",
+        "parents": [
+          "PF",
+          "B4"
+        ],
+        "layout": [
+          0.225,
+          2
+        ]
+      },
+      {
+        "id": "B5",
+        "label": "pH not fixed",
+        "description": "pH not corrected",
+        "kind": "chance",
+        "parents": [],
+        "cpt": [
+          {
+            "when": {},
+            "p": 0.004,
+            "param": "B5"
+          }
+        ],
+        "layout": [
+          0.39,
+          1
+        ]
+      },
+      {
+        "id": "PRES",
+        "label": "Poor preservation",
+        "description": "Inadequate preservation",
+        "kind": "logic",
+        "gate": "OR",
+        "parents": [
+          "B1",
+          "B2",
+          "HOT",
+          "B5"
+        ],
+        "layout": [
+          0.2,
+          3
+        ]
+      },
+      {
+        "id": "SS",
+        "label": "Sanitation skipped",
+        "description": "Sanitation skipped (B6)",
+        "kind": "chance",
+        "parents": [
+          "TP",
+          "DI"
+        ],
+        "cpt": [
+          {
+            "when": {
+              "TP": false,
+              "DI": false
+            },
+            "p": 0.005,
+            "param": "SS_00"
+          },
+          {
+            "when": {
+              "TP": false,
+              "DI": true
+            },
+            "p": 0.02,
+            "param": "SS_01"
+          },
+          {
+            "when": {
+              "TP": true,
+              "DI": false
+            },
+            "p": 0.02,
+            "param": "SS_10"
+          },
+          {
+            "when": {
+              "TP": true,
+              "DI": true
+            },
+            "p": 0.008,
+            "param": "SS_11"
+          }
+        ],
+        "layout": [
+          0.5,
+          1
+        ]
+      },
+      {
+        "id": "B7",
+        "label": "Sanitiser bad",
+        "description": "Sanitiser ineffective",
+        "kind": "chance",
+        "parents": [],
+        "cpt": [
+          {
+            "when": {},
+            "p": 0.002,
+            "param": "B7"
+          }
+        ],
+        "layout": [
+          0.61,
+          1
+        ]
+      },
+      {
+        "id": "NOZZLE",
+        "label": "Nozzle contam.",
+        "description": "Nozzle contamination",
+        "kind": "logic",
+        "gate": "OR",
+        "parents": [
+          "SS",
+          "B7"
+        ],
+        "layout": [
+          0.55,
+          3
+        ]
+      },
+      {
+        "id": "C",
+        "label": "Contamination",
+        "description": "Contamination",
+        "kind": "logic",
+        "gate": "OR",
+        "parents": [
+          "PRES",
+          "NOZZLE"
+        ],
+        "layout": [
+          0.38,
+          4
+        ]
+      },
+      {
+        "id": "RB",
+        "label": "Released early",
+        "description": "Released before result (B9)",
+        "kind": "chance",
+        "parents": [
+          "TP"
+        ],
+        "cpt": [
+          {
+            "when": {
+              "TP": false
+            },
+            "p": 0.01,
+            "param": "RB_0"
+          },
+          {
+            "when": {
+              "TP": true
+            },
+            "p": 0.006,
+            "param": "RB_1"
+          }
+        ],
+        "layout": [
+          0.72,
+          1
+        ]
+      },
+      {
+        "id": "B8",
+        "label": "Bad sample",
+        "description": "Sample not representative",
+        "kind": "chance",
+        "parents": [],
+        "cpt": [
+          {
+            "when": {},
+            "p": 0.95,
+            "param": "B8"
+          }
+        ],
+        "layout": [
+          0.83,
+          1
+        ]
+      },
+      {
+        "id": "B10",
+        "label": "False pass",
+        "description": "False pass recorded",
+        "kind": "chance",
+        "parents": [],
+        "cpt": [
+          {
+            "when": {},
+            "p": 0.005,
+            "param": "B10"
+          }
+        ],
+        "layout": [
+          0.94,
+          1
+        ]
+      },
+      {
+        "id": "QM",
+        "label": "QC misses it",
+        "description": "QC misses it",
+        "kind": "logic",
+        "gate": "OR",
+        "parents": [
+          "RB",
+          "B8",
+          "B10"
+        ],
+        "layout": [
+          0.83,
+          3
+        ]
+      },
+      {
+        "id": "U",
+        "label": "Unsafe release",
+        "description": "Unsafe batch released",
+        "kind": "logic",
+        "gate": "AND",
+        "parents": [
+          "C",
+          "QM"
+        ],
+        "layout": [
+          0.6,
+          5
+        ]
+      }
+    ],
+    "options": [
+      {
+        "id": "second_probe",
+        "label": "Second temperature probe",
+        "kind": "measure",
+        "changes": [
+          {
+            "param": "P_PF",
+            "op": "scale",
+            "factor": 0.05
+          }
+        ]
+      },
+      {
+        "id": "paper_fallback",
+        "label": "Paper fallback for work instructions",
+        "kind": "measure",
+        "changes": [
+          {
+            "param": "B1_down",
+            "op": "relative",
+            "from": "B1_ok",
+            "factor": 1.5
+          },
+          {
+            "param": "B2_down",
+            "op": "relative",
+            "from": "B2_ok",
+            "factor": 1.5
+          },
+          {
+            "param": "SS_01",
+            "op": "relative",
+            "from": "SS_00",
+            "factor": 1.5
+          },
+          {
+            "param": "SS_11",
+            "op": "relative",
+            "from": "SS_10",
+            "factor": 1.5
+          }
+        ]
+      },
+      {
+        "id": "cyber_incident",
+        "label": "Cyber incident (B10 x10)",
+        "kind": "threat",
+        "changes": [
+          {
+            "param": "B10",
+            "op": "scale",
+            "factor": 10
+          }
+        ]
+      }
+    ]
+  },
+  "validation": {
+    "columns": [
+      {
+        "column": "shift_handover_pressure",
+        "node": "TP"
+      },
+      {
+        "column": "wifi_down",
+        "node": "DI"
+      },
+      {
+        "column": "probe_fault",
+        "node": "PF"
+      },
+      {
+        "column": "sanitation_skipped",
+        "node": "SS"
+      },
+      {
+        "column": "released_before_result",
+        "node": "RB"
+      },
+      {
+        "column": "contaminated",
+        "node": "C"
+      },
+      {
+        "column": "unsafe_release",
+        "node": "U"
+      }
+    ]
+  },
+  "sample_data": {
+    "n": 200,
+    "seed": 2026,
+    "overrides": {
+      "P_TP": 0.35
+    },
+    "note": "The sample records come from a cell with more handover time pressure than the model assumes (planted finding for the validation exercise)."
+  }
+}

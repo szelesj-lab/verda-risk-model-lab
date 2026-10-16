@@ -1,0 +1,198 @@
+From 10f854e51366448694577e5b61232c90848b0b66 Mon Sep 17 00:00:00 2001
+From: Claude <noreply@anthropic.com>
+Date: Fri, 16 Oct 2026 15:28:23 +0200
+Subject: [PATCH] Hide Open model (Ctrl+Shift+O); Export model on tab 3
+
+- no model buttons in the header any more
+- Open model: Ctrl+Shift+O or the file name on the command line (instructors)
+- Export model... in the MODEL card of tab 3 (and Ctrl+E): writes the
+  current values with export time and source model; the program keeps
+  working with the open model
+
+Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>
+Claude-Session: https://claude.ai/code/session_01RYtgVzosoCtciR6GN6D2KT
+---
+ MODEL_FORMAT.md |  7 +++++--
+ README.md       | 15 ++++++++++++---
+ verda_app.py    | 36 +++++++++++++++++++++++-------------
+ verda_theme.py  | 11 -----------
+ 4 files changed, 40 insertions(+), 29 deletions(-)
+
+diff --git a/MODEL_FORMAT.md b/MODEL_FORMAT.md
+index 5a8bed4..eb80d04 100644
+--- a/MODEL_FORMAT.md
++++ b/MODEL_FORMAT.md
+@@ -4,8 +4,10 @@
+ 
+ One model is one JSON file. It holds the system description, the fault tree, the
+ Bayesian network, the scenarios (options), the validation columns and the node positions.
+-Open a file with **Open model…** in the program header. **Save model as…** writes the
+-current model, including the values you edited on tabs 1 and 3, to a new file.
++**Export model…** (tab 3, or Ctrl+E) writes the current model, including the values
++you edited on tabs 1 and 3, to a new file. Instructors open a model file with
++**Ctrl+Shift+O**, or start the program with the file name:
++`python verda_app.py models/pump_station.json`.
+ 
+ The program checks a file before loading it and lists every problem it finds, such as
+ an unknown input, a probability outside 0-1, a missing CPT row or a cycle. If the file
+@@ -44,6 +46,7 @@ text editor.
+ | --- | --- |
+ | `name` | Shown in the header and the window title. |
+ | `description`, `author`, `notes` | Free text. |
++| `exported`, `exported_from` | Added by *Export model…*: date and time, and the model it was made from. |
+ | `unit` | How probabilities are counted, e.g. `"per batch"`, `"per day"`. |
+ | `items` | Plural noun for "about 1 in N …", e.g. `"batches"`, `"days"`. |
+ 
+diff --git a/README.md b/README.md
+index 435e402..a3a87a0 100644
+--- a/README.md
++++ b/README.md
+@@ -8,8 +8,10 @@ skincare production cell: a fault tree and a Bayesian network built on the same
+ All probabilities are illustrative values per batch.
+ 
+ The system is described in a **model file** (`models/*.json`). VERDA is the bundled
+-default; *Open model…* in the header loads another model and *Save model as…* writes the
+-current values to a new file. See [MODEL_FORMAT.md](MODEL_FORMAT.md).
++default. Students can **export** their current values (*Export model…* on tab 3, or
++Ctrl+E) to a model file, e.g. to hand it in. Opening another model is deliberately not on
++screen (instructor function): press **Ctrl+Shift+O**, or start the program with the file
++name. See [MODEL_FORMAT.md](MODEL_FORMAT.md).
+ 
+ ## Files
+ 
+@@ -42,7 +44,8 @@ python generate_data.py out.csv --model models/pump_station.json
+ 
+ Install Python 3.10+ from python.org, then double-click `build_exe.bat`.
+ The result is `dist\VERDA_Risk_Lab.exe` (single file, no Python needed on student PCs).
+-Copy the `models` folder next to the .exe so the other models are at hand in *Open model…*.
++Copy the `models` folder next to the .exe so the other models are at hand with Ctrl+Shift+O,
++or start it as `VERDA_Risk_Lab.exe models\pump_station.json`.
+ 
+ ## The four tabs
+ 
+@@ -95,3 +98,9 @@ MODEL: `shift_handover_pressure`, `released_before_result` and `unsafe_release`.
+ the errors, fix them and justify each change.
+ 
+ Keep this section out of the copy you give to students.
++
++## Checking an exported model
++
++A student's export is an ordinary model file. Its `meta` block records `exported` (date and time)
++and `exported_from` (the model it was made from). Open it with Ctrl+Shift+O to check it, or compare it
++with the original in any text or diff tool: only the changed `p` values differ.
+diff --git a/verda_app.py b/verda_app.py
+index 81beec5..27289fa 100644
+--- a/verda_app.py
++++ b/verda_app.py
+@@ -12,8 +12,10 @@ Tabs:
+   4. Validation        - compare the model with batch records from a CSV file
+ 
+ The system itself is described in a model file (models/*.json). The VERDA
+-production cell is the bundled sample; "Open model…" in the header loads
+-another one and "Save model as…" writes the current values to a new file.
++production cell is the bundled default. "Export model…" (tab 3, or Ctrl+E)
++writes the current values to a new file, e.g. for handing in. Opening another
++model is an instructor function: Ctrl+Shift+O, or
++    python verda_app.py models/pump_station.json
+ 
+ Uses only the Python standard library (tkinter), so it packs into a small
+ Windows .exe with PyInstaller (see build_exe.bat).
+@@ -21,6 +23,7 @@ Windows .exe with PyInstaller (see build_exe.bat).
+ 
+ import os
+ import tkinter as tk
++from datetime import datetime
+ from tkinter import ttk, filedialog, messagebox
+ import tkinter.font as tkfont
+ 
+@@ -280,6 +283,9 @@ class BayesTab(ttk.Frame):
+         ttk.Button(bar, text="Clear evidence and changes", command=self.clear).pack(fill="x")
+         ttk.Button(bar, text="Edit all parameters…", command=self.edit_params).pack(fill="x", pady=4)
+         ttk.Button(bar, text="Node probability table…", command=self.show_table).pack(fill="x")
++        ttk.Button(bar, text="Export model…", command=self.app.export_model).pack(fill="x", pady=(4, 0))
++        ttk.Label(bar, text="Saves the values from tabs 1 and 3 to a model file.",
++                  style="Muted.TLabel", wraplength=th.px(260)).pack(anchor="w", pady=(4, 0))
+ 
+         self.diagram = BayesDiagram(self, app)
+         self.diagram.pack(side="left", fill="both", expand=True, padx=(PAD, 0))
+@@ -505,8 +511,8 @@ class App(tk.Tk):
+         bar = th.header(self, APP_TITLE, "", f"Developer: {DEVELOPER}\n{AFFILIATION}")
+         bar.pack(fill="x")
+         self.subtitle = bar.subtitle
+-        th.header_button(bar, "Save model as…", self.save_model).pack(side="right", padx=(0, th.px(18)))
+-        th.header_button(bar, "Open model…", self.open_model).pack(side="right", padx=(0, th.px(6)))
++        self.bind_all("<Control-O>", lambda _e: self.open_model())    # Ctrl+Shift+O, instructors only
++        self.bind_all("<Control-e>", lambda _e: self.export_model())
+         self.notebook = None
+         self.build_tabs()
+         self.geometry(f"{th.px(1500)}x{th.px(920)}")
+@@ -570,16 +576,20 @@ class App(tk.Tk):
+             return False
+         return True
+ 
+-    def save_model(self, path=None):
+-        """Save the model with the values currently set on tabs 1 and 3."""
++    def export_model(self, path=None):
++        """Write the model with the values currently set on tabs 1 and 3.
++
++        The program keeps working with the open model; the file is for handing
++        in or checking later (it records when and from which model it was made).
++        """
+         try:
+             fta_p = self.fta.probabilities()
+         except ValueError as e:
+             messagebox.showerror(APP_TITLE, f"Fix the fault tree values first:\n{e}", parent=self)
+             return False
+         path = path or filedialog.asksaveasfilename(
+-            parent=self, title="Save model as", defaultextension=".json",
+-            initialdir=self.model_dir(), initialfile=f"{vm.slug()}_edited.json",
++            parent=self, title="Export model", defaultextension=".json",
++            initialdir=os.path.expanduser("~"), initialfile=f"{vm.slug()}_export.json",
+             filetypes=[("Model files", "*.json")])
+         if not path:
+             return False
+@@ -587,14 +597,14 @@ class App(tk.Tk):
+             messagebox.showerror(APP_TITLE, "The bundled sample model cannot be overwritten. "
+                                  "Choose another file name.", parent=self)
+             return False
++        meta = {"exported": datetime.now().isoformat(timespec="seconds"),
++                "exported_from": vm.MODEL_NAME}
+         try:
+-            vm.save_model(path, fta_p, self.bayes.params)
++            vm.save_model(path, fta_p, self.bayes.params, meta)
+         except Exception as e:
+-            messagebox.showerror(APP_TITLE, f"Could not save the model:\n{e}", parent=self)
++            messagebox.showerror(APP_TITLE, f"Could not export the model:\n{e}", parent=self)
+             return False
+-        vm.MODEL_PATH = path
+-        vm.load_model(path)                         # the saved values become the new defaults
+-        self.build_tabs()
++        messagebox.showinfo(APP_TITLE, f"Model exported to\n{path}", parent=self)
+         return True
+ 
+     def maximize(self):
+diff --git a/verda_theme.py b/verda_theme.py
+index 17cee95..c28cf45 100644
+--- a/verda_theme.py
++++ b/verda_theme.py
+@@ -200,17 +200,6 @@ def header(root, title, subtitle, right_text):
+     return bar
+ 
+ 
+-def header_button(bar, text, command):
+-    """Flat button for the dark header."""
+-    idle, hover = "#334155", "#475569"
+-    b = tk.Label(bar, text=text, bg=idle, fg=HEADER_TEXT, font=F_SMALL_BOLD, padx=px(12), pady=px(5),
+-                 cursor="hand2")
+-    b.bind("<Button-1>", lambda _e: command())
+-    b.bind("<Enter>", lambda _e: b.config(bg=hover))
+-    b.bind("<Leave>", lambda _e: b.config(bg=idle))
+-    return b
+-
+-
+ def style_canvas(canvas):
+     canvas.configure(background=CARD, highlightthickness=1, highlightbackground=LINE,
+                      highlightcolor=LINE)
+-- 
+2.43.0
+

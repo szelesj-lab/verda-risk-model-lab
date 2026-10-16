@@ -193,7 +193,8 @@ def header(root, title, subtitle, right_text):
                         fill="#ffffff", outline="")
     logo.pack(side="left", padx=(0, px(10)))
     tk.Label(bar, text=title, bg=HEADER, fg=HEADER_TEXT, font=F_APP).pack(side="left")
-    tk.Label(bar, text=subtitle, bg=HEADER, fg=HEADER_MUTED, font=F_BASE).pack(side="left", padx=(px(14), 0))
+    bar.subtitle = tk.Label(bar, text=subtitle, bg=HEADER, fg=HEADER_MUTED, font=F_BASE)
+    bar.subtitle.pack(side="left", padx=(px(14), 0))
     tk.Label(bar, text=right_text, bg=HEADER, fg=HEADER_MUTED, font=F_SMALL,
              justify="right").pack(side="right")
     return bar

@@ -1,0 +1,435 @@
+{
+  "format": "verda-risk-model",
+  "version": 1,
+  "meta": {
+    "name": "Booster pump station",
+    "description": "Small example: three pumps of which two are needed (2-out-of-3), grid power with a manually started backup generator, and an operator who also has to catch controller faults. Hazard: no water supply to the production line.",
+    "author": "József Szeles, Department of System Engineering, University of Pannonia",
+    "unit": "per day",
+    "items": "days",
+    "notes": "Illustrative values. The operator event OP appears in two branches of the fault tree."
+  },
+  "fault_tree": {
+    "top": "TOP",
+    "events": [
+      {
+        "id": "PA",
+        "label": "Pump A fails",
+        "description": "Pump A fails during the day",
+        "layer": "Technology",
+        "p": 0.02
+      },
+      {
+        "id": "PB",
+        "label": "Pump B fails",
+        "description": "Pump B fails during the day",
+        "layer": "Technology",
+        "p": 0.02
+      },
+      {
+        "id": "PC",
+        "label": "Pump C fails",
+        "description": "Pump C fails during the day",
+        "layer": "Technology",
+        "p": 0.02
+      },
+      {
+        "id": "GRID",
+        "label": "Grid power lost",
+        "description": "Loss of grid power",
+        "layer": "Technology",
+        "p": 0.01
+      },
+      {
+        "id": "GEN",
+        "label": "Generator fails",
+        "description": "Backup generator fails to run",
+        "layer": "Technology",
+        "p": 0.05
+      },
+      {
+        "id": "OP",
+        "label": "Alarm missed",
+        "description": "Operator misses or ignores the alarm",
+        "layer": "Human",
+        "p": 0.1
+      },
+      {
+        "id": "CTRL",
+        "label": "Controller fault",
+        "description": "Pump controller stops the pumps by mistake",
+        "layer": "Data",
+        "p": 0.005
+      }
+    ],
+    "gates": [
+      {
+        "id": "TOP",
+        "label": "No water supply",
+        "description": "No water supply to the line",
+        "type": "OR",
+        "inputs": [
+          "PUMPS",
+          "NOPOWER",
+          "LATE"
+        ]
+      },
+      {
+        "id": "PUMPS",
+        "label": "Too few pumps",
+        "description": "Fewer than two pumps running",
+        "type": "VOTE",
+        "k": 2,
+        "inputs": [
+          "PA",
+          "PB",
+          "PC"
+        ]
+      },
+      {
+        "id": "NOPOWER",
+        "label": "No power",
+        "description": "Grid lost and backup not running",
+        "type": "AND",
+        "inputs": [
+          "GRID",
+          "BACKUP"
+        ]
+      },
+      {
+        "id": "BACKUP",
+        "label": "Backup not running",
+        "description": "Backup generator not running",
+        "type": "OR",
+        "inputs": [
+          "GEN",
+          "OP"
+        ]
+      },
+      {
+        "id": "LATE",
+        "label": "Fault not caught",
+        "description": "Controller fault not caught in time",
+        "type": "AND",
+        "inputs": [
+          "CTRL",
+          "OP"
+        ]
+      }
+    ]
+  },
+  "bayesian_network": {
+    "query": "OUT",
+    "compare": [
+      "OUT",
+      "PUMPS"
+    ],
+    "evidence_panel": [
+      "HEAT",
+      "PA",
+      "GRID",
+      "OP",
+      "PUMPS",
+      "OUT"
+    ],
+    "nodes": [
+      {
+        "id": "HEAT",
+        "label": "Heatwave",
+        "description": "Heatwave (high demand, hot pumps)",
+        "kind": "chance",
+        "parents": [],
+        "cpt": [
+          {
+            "when": {},
+            "p": 0.1
+          }
+        ]
+      },
+      {
+        "id": "PA",
+        "label": "Pump A fails",
+        "description": "Pump A fails",
+        "kind": "chance",
+        "parents": [
+          "HEAT"
+        ],
+        "cpt": [
+          {
+            "when": {
+              "HEAT": false
+            },
+            "p": 0.02
+          },
+          {
+            "when": {
+              "HEAT": true
+            },
+            "p": 0.08
+          }
+        ]
+      },
+      {
+        "id": "PB",
+        "label": "Pump B fails",
+        "description": "Pump B fails",
+        "kind": "chance",
+        "parents": [
+          "HEAT"
+        ],
+        "cpt": [
+          {
+            "when": {
+              "HEAT": false
+            },
+            "p": 0.02
+          },
+          {
+            "when": {
+              "HEAT": true
+            },
+            "p": 0.08
+          }
+        ]
+      },
+      {
+        "id": "PC",
+        "label": "Pump C fails",
+        "description": "Pump C fails",
+        "kind": "chance",
+        "parents": [
+          "HEAT"
+        ],
+        "cpt": [
+          {
+            "when": {
+              "HEAT": false
+            },
+            "p": 0.02
+          },
+          {
+            "when": {
+              "HEAT": true
+            },
+            "p": 0.08
+          }
+        ]
+      },
+      {
+        "id": "PUMPS",
+        "label": "Too few pumps",
+        "description": "Fewer than two pumps running",
+        "kind": "logic",
+        "gate": "VOTE",
+        "parents": [
+          "PA",
+          "PB",
+          "PC"
+        ],
+        "k": 2
+      },
+      {
+        "id": "GRID",
+        "label": "Grid lost",
+        "description": "Loss of grid power",
+        "kind": "chance",
+        "parents": [
+          "HEAT"
+        ],
+        "cpt": [
+          {
+            "when": {
+              "HEAT": false
+            },
+            "p": 0.01
+          },
+          {
+            "when": {
+              "HEAT": true
+            },
+            "p": 0.05
+          }
+        ]
+      },
+      {
+        "id": "GEN",
+        "label": "Generator fails",
+        "description": "Backup generator fails",
+        "kind": "chance",
+        "parents": [],
+        "cpt": [
+          {
+            "when": {},
+            "p": 0.05
+          }
+        ]
+      },
+      {
+        "id": "OP",
+        "label": "Alarm missed",
+        "description": "Operator misses the alarm",
+        "kind": "chance",
+        "parents": [],
+        "cpt": [
+          {
+            "when": {},
+            "p": 0.1
+          }
+        ]
+      },
+      {
+        "id": "BACKUP",
+        "label": "Backup down",
+        "description": "Backup not running",
+        "kind": "logic",
+        "gate": "OR",
+        "parents": [
+          "GEN",
+          "OP"
+        ]
+      },
+      {
+        "id": "NOPOWER",
+        "label": "No power",
+        "description": "No power for the pumps",
+        "kind": "logic",
+        "gate": "AND",
+        "parents": [
+          "GRID",
+          "BACKUP"
+        ]
+      },
+      {
+        "id": "CTRL",
+        "label": "Controller fault",
+        "description": "Controller stops the pumps",
+        "kind": "chance",
+        "parents": [],
+        "cpt": [
+          {
+            "when": {},
+            "p": 0.005
+          }
+        ]
+      },
+      {
+        "id": "LATE",
+        "label": "Fault not caught",
+        "description": "Controller fault not caught",
+        "kind": "logic",
+        "gate": "AND",
+        "parents": [
+          "CTRL",
+          "OP"
+        ]
+      },
+      {
+        "id": "OUT",
+        "label": "No water",
+        "description": "No water supply to the line",
+        "kind": "logic",
+        "gate": "OR",
+        "parents": [
+          "PUMPS",
+          "NOPOWER",
+          "LATE"
+        ]
+      }
+    ],
+    "options": [
+      {
+        "id": "maintenance",
+        "label": "Preventive pump maintenance",
+        "kind": "measure",
+        "changes": [
+          {
+            "param": "PA_0",
+            "op": "scale",
+            "factor": 0.5
+          },
+          {
+            "param": "PA_1",
+            "op": "scale",
+            "factor": 0.5
+          },
+          {
+            "param": "PB_0",
+            "op": "scale",
+            "factor": 0.5
+          },
+          {
+            "param": "PB_1",
+            "op": "scale",
+            "factor": 0.5
+          },
+          {
+            "param": "PC_0",
+            "op": "scale",
+            "factor": 0.5
+          },
+          {
+            "param": "PC_1",
+            "op": "scale",
+            "factor": 0.5
+          }
+        ]
+      },
+      {
+        "id": "auto_start",
+        "label": "Automatic generator start",
+        "kind": "measure",
+        "changes": [
+          {
+            "param": "OP",
+            "op": "scale",
+            "factor": 0.3
+          }
+        ]
+      },
+      {
+        "id": "hot_summer",
+        "label": "Hot summer (heatwave half the days)",
+        "kind": "threat",
+        "changes": [
+          {
+            "param": "HEAT",
+            "op": "set",
+            "value": 0.5
+          }
+        ]
+      }
+    ]
+  },
+  "validation": {
+    "columns": [
+      {
+        "column": "heatwave",
+        "node": "HEAT"
+      },
+      {
+        "column": "grid_lost",
+        "node": "GRID"
+      },
+      {
+        "column": "alarm_missed",
+        "node": "OP"
+      },
+      {
+        "column": "too_few_pumps",
+        "node": "PUMPS"
+      },
+      {
+        "column": "no_water",
+        "node": "OUT"
+      }
+    ]
+  },
+  "sample_data": {
+    "n": 365,
+    "seed": 7,
+    "overrides": {
+      "OP": 0.25
+    },
+    "note": "In the simulated year the operators miss alarms more often than the model assumes."
+  }
+}

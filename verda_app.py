@@ -11,12 +11,21 @@ Tabs:
                          CPT editor and option comparison underneath
   4. Validation        - compare the model with batch records from a CSV file
 
+The system itself is described in a model file (models/*.json). The VERDA
+production cell is the bundled default. "Export model…" (tab 3, or Ctrl+E)
+writes the current values to a new file, e.g. for handing in. Opening another
+model is an instructor function: Ctrl+Shift+O, or
+    python verda_app.py models/pump_station.json
+
 Uses only the Python standard library (tkinter), so it packs into a small
 Windows .exe with PyInstaller (see build_exe.bat).
 """
 
+import os
 import tkinter as tk
+from datetime import datetime
 from tkinter import ttk, filedialog, messagebox
+import tkinter.font as tkfont
 
 import verda_model as vm
 import generate_data
@@ -44,7 +53,8 @@ class FaultTreeTab(ttk.Frame):
 
         res = th.Card(left, text="RESULT", padding=(12, 10))
         res.pack(fill="x")
-        ttk.Label(res, text="P(UNSAFE BATCH RELEASED)", style="KpiCaption.TLabel").pack(anchor="w")
+        ttk.Label(res, text=f"P({vm.top_label().upper()})", style="KpiCaption.TLabel",
+                  wraplength=th.px(330)).pack(anchor="w")
         self.kpi = ttk.Label(res, text="", style="Kpi.TLabel")
         self.kpi.pack(anchor="w", pady=(2, 0))
         row = ttk.Frame(res)
@@ -59,10 +69,13 @@ class FaultTreeTab(ttk.Frame):
 
         box = th.Card(left, text="BASIC EVENTS  ·  PROBABILITY PER BATCH", padding=(12, 8))
         box.pack(fill="x", pady=(PAD, 0))
+        id_w = max([4] + [len(x) for x in vm.BASIC_EVENTS])
+        lab_w = min(24, max([18] + [len(FTA_SHORT[x]) + 1 for x in vm.BASIC_EVENTS]))
+        box.config(text=f"BASIC EVENTS  ·  PROBABILITY {vm.UNIT.upper()}")
         for r, (eid, (desc, layer, p)) in enumerate(vm.BASIC_EVENTS.items()):
             ttk.Label(box, text=eid, font=th.F_SMALL_BOLD, foreground=th.MUTED,
-                      width=4).grid(row=r, column=0, sticky="w")
-            ttk.Label(box, text=FTA_SHORT[eid], width=18).grid(row=r, column=1, sticky="w")
+                      width=id_w + 1).grid(row=r, column=0, sticky="w")
+            ttk.Label(box, text=FTA_SHORT[eid], width=lab_w).grid(row=r, column=1, sticky="w")
             ttk.Label(box, text=layer, style="Muted.TLabel", width=12).grid(row=r, column=2, sticky="w")
             v = tk.StringVar(value=str(p))
             e = ttk.Entry(box, textvariable=v, width=8, justify="right")
@@ -102,7 +115,7 @@ class FaultTreeTab(ttk.Frame):
         q = vm.top_probability(p)
         base = vm.top_probability(vm.default_fta_probabilities())
         self.kpi.config(text=f"{q:.5f}")
-        self.kpi_one_in.config(text=f"about 1 in {1 / q:,.0f} batches" if q > 0 else "never")
+        self.kpi_one_in.config(text=f"about 1 in {1 / q:,.0f} {vm.ITEMS}" if q > 0 else "never")
         rel = q / base - 1 if base > 0 else 0.0
         if abs(rel) < 0.005:
             self.kpi_delta.config(text="default model", bg=th.SUBTLE, fg=th.MUTED)
@@ -229,7 +242,6 @@ class SensitivityTab(ttk.Frame):
 
 class BayesTab(ttk.Frame):
     """Evidence and system changes on the left, the drawn network on the right."""
-    EVIDENCE_NODES = ["TP", "DI", "PF", "SS", "RB", "B8", "B10", "C", "U"]
     STATES = ["unknown", "yes", "no"]
 
     def __init__(self, master, app):
@@ -244,6 +256,7 @@ class BayesTab(ttk.Frame):
         ev = th.Card(left, text="EVIDENCE  ·  WHAT WE OBSERVE", padding=(12, 8))
         ev.pack(fill="x")
         self.evidence = {}
+        self.EVIDENCE_NODES = list(vm.EVIDENCE_NODES)
         for r, n in enumerate(self.EVIDENCE_NODES):
             ttk.Label(ev, text=BN_SHORT[n], width=17).grid(row=r, column=0, sticky="w")
             v = tk.StringVar(value="unknown")
@@ -262,25 +275,44 @@ class BayesTab(ttk.Frame):
             v = tk.BooleanVar(value=False)
             ttk.Checkbutton(op, text=label, variable=v, command=self.calculate).pack(anchor="w")
             self.options[k] = v
+        if not vm.OPTIONS:
+            ttk.Label(op, text="This model defines no changes.", style="Muted.TLabel").pack(anchor="w")
 
         bar = th.Card(left, text="MODEL", padding=(12, 8))
         bar.pack(fill="x", pady=(PAD, 0))
         ttk.Button(bar, text="Clear evidence and changes", command=self.clear).pack(fill="x")
         ttk.Button(bar, text="Edit all parameters…", command=self.edit_params).pack(fill="x", pady=4)
         ttk.Button(bar, text="Node probability table…", command=self.show_table).pack(fill="x")
+        ttk.Button(bar, text="Export model…", command=self.app.export_model).pack(fill="x", pady=(4, 0))
+        ttk.Label(bar, text="Saves the values from tabs 1 and 3 to a model file.",
+                  style="Muted.TLabel", wraplength=th.px(260)).pack(anchor="w", pady=(4, 0))
 
         self.diagram = BayesDiagram(self, app)
         self.diagram.pack(side="left", fill="both", expand=True, padx=(PAD, 0))
-        self.cmp = ttk.Treeview(self.diagram.extra, columns=("opt", "u", "c"), show="headings", height=5)
-        for col, txt, wd in [("opt", "Option", 160), ("u", "P(unsafe)", 80),
-                             ("c", "P(contam.)", 86)]:
+        two = vm.SECOND != vm.QUERY
+        self.cmp = ttk.Treeview(self.diagram.extra, columns=("opt", "u", "c") if two else ("opt", "u"),
+                                show="headings", height=min(max(len(vm.option_variants()), 2), 7))
+        measure = tkfont.nametofont("TkDefaultFont").measure
+        head_font = ttk.Style().lookup("Treeview.Heading", "font") or "TkHeadingFont"
+        head_measure = tkfont.Font(font=head_font).measure
+        opt_w = max([measure("Option")] + [measure(label) for label, _ in vm.option_variants()])
+        cols = [("opt", "Option", min(opt_w + th.px(14), th.px(260))),
+                ("u", f"P({self.short(vm.QUERY)})", 0), ("c", f"P({self.short(vm.SECOND)})", 0)]
+        for col, txt, wd in cols[:3 if two else 2]:
+            wd = wd or max(th.px(80), head_measure(txt) + th.px(22))
             self.cmp.heading(col, text=txt, anchor="w" if col == "opt" else "e")
-            self.cmp.column(col, width=th.px(wd), anchor="w" if col == "opt" else "e")
+            self.cmp.column(col, width=wd, anchor="w" if col == "opt" else "e")
         self.cmp.tag_configure("best", foreground=th.GOOD)
         self.cmp.pack(fill="both", expand=True)
         ttk.Label(self.diagram.extra, text="Each option alone, not combined with the ticked changes.",
                   style="Muted.TLabel", wraplength=th.px(300)).pack(anchor="w", pady=(6, 0))
         self.calculate()
+
+    @staticmethod
+    def short(node, limit=18):
+        s = vm.BN_SHORT[node]
+        s = s if s[:2].isupper() else s[:1].lower() + s[1:]
+        return s if len(s) <= limit else s[:limit - 1].rstrip() + "."
 
     def current_evidence(self):
         ev = {n: v.get() == "yes" for n, v in self.evidence.items() if v.get() != "unknown"}
@@ -313,10 +345,11 @@ class BayesTab(ttk.Frame):
             return False
         self.last = (prior, post, ev, opts)
         self.cmp.delete(*self.cmp.get_children())
-        best = min(u for label, u, _ in rows if label != vm.OPTIONS["cyber_incident"])
-        for label, u, c in rows:
+        kinds = [vm.variant_kind(o) for _, o in vm.option_variants()]
+        best = min(u for (_, u, _), kind in zip(rows, kinds) if kind != "threat")
+        for (label, u, c), kind in zip(rows, kinds):
             self.cmp.insert("", "end", values=(label, f"{u:.5f}", f"{c:.5f}"),
-                            tags=("best",) if u == best else ())
+                            tags=("best",) if u == best and kind != "baseline" else ())
         self.diagram.refresh()
         return True
 
@@ -358,14 +391,22 @@ class BayesTab(ttk.Frame):
         body = ttk.Frame(win, padding=16)
         body.pack(fill="both", expand=True)
         entries = {}
-        for r, (k, val) in enumerate(self.params.items()):
-            ttk.Label(body, text=k, width=12, font=th.F_SMALL_BOLD).grid(row=r, column=0, sticky="w")
+        where = {key: (node, combo) for node, table in vm.CPT_KEYS.items()
+                 for combo, key in table.items()}
+        for j, title in enumerate(("Parameter", "P(yes) of node", "when", "")):
+            ttk.Label(body, text=title, font=th.F_SMALL_BOLD, foreground=th.MUTED).grid(
+                row=0, column=j, sticky="w", padx=(0, 10))
+        for r, (k, val) in enumerate(self.params.items(), start=1):
+            node, combo = where[k]
+            cond = ", ".join(f"{q} {'yes' if x else 'no'}" for q, x in zip(vm.BN_PARENTS[node], combo))
+            ttk.Label(body, text=k, font=th.F_SMALL_BOLD).grid(row=r, column=0, sticky="w", padx=(0, 10))
+            ttk.Label(body, text=f"{node}  {vm.BN_SHORT[node]}").grid(row=r, column=1, sticky="w", padx=(0, 10))
+            ttk.Label(body, text=cond or "always", style="Muted.TLabel").grid(row=r, column=2, sticky="w",
+                                                                              padx=(0, 10))
             v = tk.StringVar(value=str(val))
-            ttk.Entry(body, textvariable=v, width=10, justify="right").grid(row=r, column=1, pady=2)
+            ttk.Entry(body, textvariable=v, width=10, justify="right").grid(row=r, column=3, pady=2)
             entries[k] = v
-        ttk.Label(body, text="P_* = root node probabilities;  _ok/_down = instructions up/down;\n"
-                             "SS_xy: x = time pressure, y = instructions down;  RB_x: x = time pressure",
-                  style="Muted.TLabel").grid(row=len(entries), column=0, columnspan=2, pady=10)
+        r = len(entries) + 1
 
         def apply():
             try:
@@ -385,7 +426,7 @@ class BayesTab(ttk.Frame):
                 v.set(str(vm.DEFAULT_BN_PARAMS[k]))
 
         bar = ttk.Frame(body)
-        bar.grid(row=len(entries) + 1, column=0, columnspan=2)
+        bar.grid(row=r, column=0, columnspan=4, pady=(12, 0))
         ttk.Button(bar, text="Apply", style="Accent.TButton", command=apply).pack(side="left")
         ttk.Button(bar, text="Reset defaults", command=reset).pack(side="left", padx=8)
 
@@ -432,6 +473,11 @@ class ValidationTab(ttk.Frame):
         except Exception as e:
             messagebox.showerror(APP_TITLE, f"Could not read the file:\n{e}")
             return
+        if not rows:
+            messagebox.showwarning(APP_TITLE, "No column of this file matches the model.\n\n"
+                                   "Expected columns: " + (", ".join(vm.OBSERVABLES) or
+                                                           "(the model defines none)"))
+            return
         self.status.config(text=f"{len(records)} batches from {path}")
         self.tree.delete(*self.tree.get_children())
         for col, node, k, n, obs, lo, hi, m, verdict in rows:
@@ -441,12 +487,15 @@ class ValidationTab(ttk.Frame):
                                      verdict))
 
     def generate(self):
+        if not vm.OBSERVABLES:
+            messagebox.showinfo(APP_TITLE, "This model defines no validation columns.")
+            return
         path = filedialog.asksaveasfilename(defaultextension=".csv",
-                                            initialfile="verda_batch_records.csv",
+                                            initialfile=f"{vm.slug()}_records.csv",
                                             filetypes=[("CSV files", "*.csv")])
         if path:
             generate_data.write_csv(path)
-            messagebox.showinfo(APP_TITLE, f"Saved 200 sample batch records to\n{path}")
+            messagebox.showinfo(APP_TITLE, f"Saved {vm.SAMPLE_DATA['n']} sample records to\n{path}")
 
 
 class App(tk.Tk):
@@ -459,8 +508,25 @@ class App(tk.Tk):
         th.apply(self)
         global PAD
         PAD = th.px(12)
-        th.header(self, APP_TITLE, "Risk & resilience modelling of a socio-technical production cell",
-                  f"Developer: {DEVELOPER}\n{AFFILIATION}").pack(fill="x")
+        bar = th.header(self, APP_TITLE, "", f"Developer: {DEVELOPER}\n{AFFILIATION}")
+        bar.pack(fill="x")
+        self.subtitle = bar.subtitle
+        self.bind_all("<Control-O>", lambda _e: self.open_model())    # Ctrl+Shift+O, instructors only
+        self.bind_all("<Control-e>", lambda _e: self.export_model())
+        self.notebook = None
+        self.build_tabs()
+        self.geometry(f"{th.px(1500)}x{th.px(920)}")
+        self.minsize(th.px(1000), th.px(600))
+        self.maximize()
+
+    def build_tabs(self):
+        """(Re)create the four tabs for the active model."""
+        current = 0
+        if self.notebook is not None:
+            current = self.notebook.index("current")
+            self.notebook.destroy()
+            for name in ("fta", "sensitivity", "bayes", "validation"):
+                self.__dict__.pop(name, None)
         nb = ttk.Notebook(self)
         nb.pack(fill="both", expand=True)
         self.notebook = nb
@@ -474,11 +540,72 @@ class App(tk.Tk):
         nb.add(self.sensitivity, text="2. Sensitivity")
         nb.add(self.bayes, text="3. Bayesian network")
         nb.add(self.validation, text="4. Validation")
+        nb.select(current)
         self.fta.calculate()
         self.bayes.calculate()
-        self.geometry(f"{th.px(1500)}x{th.px(920)}")
-        self.minsize(th.px(1000), th.px(600))
-        self.maximize()
+        self.subtitle.config(text=f"Model: {vm.MODEL_NAME}")
+        self.title(f"{APP_TITLE} - {vm.MODEL_NAME}")
+
+    def model_dir(self):
+        """Folder offered in the Open / Save dialogs."""
+        if vm.MODEL_PATH and os.path.dirname(vm.MODEL_PATH) != os.path.dirname(vm.DEFAULT_MODEL_PATH):
+            return os.path.dirname(vm.MODEL_PATH)
+        here = os.path.join(os.getcwd(), "models")      # models folder next to the program
+        return here if os.path.isdir(here) else os.getcwd()
+
+    def open_model(self, path=None):
+        path = path or filedialog.askopenfilename(
+            parent=self, title="Open model", initialdir=self.model_dir(),
+            filetypes=[("Model files", "*.json"), ("All files", "*.*")])
+        if not path:
+            return False
+        old_data, old_path = vm.MODEL, vm.MODEL_PATH
+        try:
+            vm.load_model(path)
+            self.build_tabs()
+        except vm.ModelError as e:
+            vm.set_model(old_data, old_path)
+            shown = e.problems[:15] + ([f"… and {len(e.problems) - 15} more"] if len(e.problems) > 15 else [])
+            messagebox.showerror(APP_TITLE, f"{os.path.basename(path)} is not a valid model:\n\n- "
+                                 + "\n- ".join(shown), parent=self)
+            return False
+        except Exception as e:                      # unreadable file or a bug: keep the old model
+            vm.set_model(old_data, old_path)
+            self.build_tabs()
+            messagebox.showerror(APP_TITLE, f"Could not open {os.path.basename(path)}:\n{e}", parent=self)
+            return False
+        return True
+
+    def export_model(self, path=None):
+        """Write the model with the values currently set on tabs 1 and 3.
+
+        The program keeps working with the open model; the file is for handing
+        in or checking later (it records when and from which model it was made).
+        """
+        try:
+            fta_p = self.fta.probabilities()
+        except ValueError as e:
+            messagebox.showerror(APP_TITLE, f"Fix the fault tree values first:\n{e}", parent=self)
+            return False
+        path = path or filedialog.asksaveasfilename(
+            parent=self, title="Export model", defaultextension=".json",
+            initialdir=os.path.expanduser("~"), initialfile=f"{vm.slug()}_export.json",
+            filetypes=[("Model files", "*.json")])
+        if not path:
+            return False
+        if os.path.abspath(path) == os.path.abspath(vm.DEFAULT_MODEL_PATH):
+            messagebox.showerror(APP_TITLE, "The bundled sample model cannot be overwritten. "
+                                 "Choose another file name.", parent=self)
+            return False
+        meta = {"exported": datetime.now().isoformat(timespec="seconds"),
+                "exported_from": vm.MODEL_NAME}
+        try:
+            vm.save_model(path, fta_p, self.bayes.params, meta)
+        except Exception as e:
+            messagebox.showerror(APP_TITLE, f"Could not export the model:\n{e}", parent=self)
+            return False
+        messagebox.showinfo(APP_TITLE, f"Model exported to\n{path}", parent=self)
+        return True
 
     def maximize(self):
         """Open maximised (Windows: 'zoomed'; Linux: -zoomed; macOS keeps the default size)."""
@@ -492,4 +619,8 @@ class App(tk.Tk):
 
 
 if __name__ == "__main__":
-    App().mainloop()
+    import sys
+    app = App()
+    if len(sys.argv) > 1:                     # python verda_app.py my_model.json
+        app.open_model(sys.argv[1])
+    app.mainloop()
